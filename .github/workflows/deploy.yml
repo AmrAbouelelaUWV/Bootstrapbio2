@@ -3,6 +3,10 @@ name: Bootstrap Terraform Deploy
 on:
   workflow_dispatch:
     inputs:
+      github_environment:
+        description: GitHub Environment containing Azure secrets/variables
+        required: true
+        default: Development
       workload:
         description: Bootstrap workload name
         required: true
@@ -53,7 +57,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ inputs.github_environment }}
     env:
       TF_IN_AUTOMATION: true
       ARM_USE_AZUREAD: true
