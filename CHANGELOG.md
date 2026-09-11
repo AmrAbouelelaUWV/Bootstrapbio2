@@ -3,6 +3,14 @@
 
 ### Bug Fixes
 
+* **checkov:** apply bootstrap policy exceptions and load config ([e8eedb7](https://github.com/nluwv/AZLABS-showcase/commit/e8eedb777e0c5e98c554bac44de67d478750d415))
+* **ci:** run workflows from repository root ([bac0174](https://github.com/nluwv/AZLABS-showcase/commit/bac017487c1b4ff33e443c7280c3d65d01907646))
+
+# 1.0.0 (2026-09-11)
+
+
+### Bug Fixes
+
 * **ci:** run workflows from repository root ([bac0174](https://github.com/nluwv/AZLABS-showcase/commit/bac017487c1b4ff33e443c7280c3d65d01907646))
 
 # 1.0.0 (2026-09-09)
