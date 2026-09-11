@@ -3,6 +3,14 @@ name: Bootstrap Terraform Deploy
 on:
   workflow_dispatch:
     inputs:
+      action:
+        description: What to run
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - destroy
       github_environment:
         description: GitHub Environment containing Azure secrets/variables
         required: true
@@ -12,7 +20,7 @@ on:
         required: true
         default: tfstate
       environment:
-        description: Target environment
+        description: Terraform environment
         required: true
         default: dev
       location:
@@ -52,6 +60,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   id-token: write
 
 jobs:
@@ -113,10 +122,11 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Resolve free instance number
-        id: instance
+      - name: Resolve instance and naming
+        id: naming
         shell: bash
         run: |
+          action="${{ inputs.action }}"
           requested="${{ inputs.instance }}"
 
           if ! [[ "$requested" =~ ^[0-9]{2}$ ]]; then
@@ -125,45 +135,42 @@ jobs:
           fi
 
           selected=""
-          start=$((10#$requested))
+          rg_name="rg-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}-${requested}"
 
-          for i in $(seq "$start" 99); do
-            candidate="$(printf '%02d' "$i")"
-            rg_name="rg-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}-${candidate}"
-            if [ "$(az group exists --name "$rg_name")" = "false" ]; then
-              selected="$candidate"
-              echo "resource_group_name=$rg_name" >> "$GITHUB_OUTPUT"
-              break
+          if [ "$action" = "deploy" ]; then
+            start=$((10#$requested))
+
+            for i in $(seq "$start" 99); do
+              candidate="$(printf '%02d' "$i")"
+              rg_name="rg-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}-${candidate}"
+              if [ "$(az group exists --name "$rg_name")" = "false" ]; then
+                selected="$candidate"
+                break
+              fi
+            done
+
+            if [ -z "$selected" ]; then
+              echo "No free instance found from $requested to 99." >&2
+              exit 1
             fi
-          done
-
-          if [ -z "$selected" ]; then
-            echo "No free instance found from $requested to 99." >&2
-            exit 1
-          fi
-
-          echo "instance=$selected" >> "$GITHUB_OUTPUT"
-          if [ "$selected" != "$requested" ]; then
-            echo "Requested instance $requested already in use. Using $selected instead."
           else
-            echo "Using requested instance $requested."
+            selected="$requested"
+
+            if [ "$(az group exists --name "$rg_name")" != "true" ]; then
+              echo "Destroy requested but resource group $rg_name was not found." >&2
+              exit 1
+            fi
           fi
 
-      - name: Terraform init
-        run: terraform init -input=false
-
-      - name: Terraform validate
-        run: terraform validate
-
-      - name: Terraform test
-        run: terraform test
-
-      - name: Compute unique suffixes
-        id: naming
-        shell: bash
-        run: |
           storage_suffix="${{ inputs.storage_account_unique_suffix }}"
           keyvault_suffix="${{ inputs.key_vault_unique_suffix }}"
+
+          if [ "$action" = "destroy" ]; then
+            if [ -z "$storage_suffix" ] || [ -z "$keyvault_suffix" ]; then
+              echo "Destroy requires the same storage_account_unique_suffix and key_vault_unique_suffix that were used during deploy." >&2
+              exit 1
+            fi
+          fi
 
           if [ -z "$storage_suffix" ]; then
             storage_suffix="$(printf '%06d' "$GITHUB_RUN_NUMBER" | tail -c 7)"
@@ -173,17 +180,58 @@ jobs:
             keyvault_suffix="$(printf '%03d' "$GITHUB_RUN_NUMBER" | tail -c 4)"
           fi
 
+          compact_workload="${{ inputs.workload }}"
+          compact_workload="${compact_workload//-/}"
+
+          state_artifact_name="bootstrap-state-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}-${selected}-${storage_suffix}-${keyvault_suffix}"
+          backend_storage_account_name="sa${compact_workload}${{ inputs.environment }}${{ inputs.region_code }}${selected}${storage_suffix}"
+          backend_container_name="${{ inputs.workload }}-${{ inputs.environment }}"
+
+          echo "instance=$selected" >> "$GITHUB_OUTPUT"
+          echo "resource_group_name=$rg_name" >> "$GITHUB_OUTPUT"
           echo "storage_suffix=$storage_suffix" >> "$GITHUB_OUTPUT"
           echo "keyvault_suffix=$keyvault_suffix" >> "$GITHUB_OUTPUT"
+          echo "state_artifact_name=$state_artifact_name" >> "$GITHUB_OUTPUT"
+          echo "backend_storage_account_name=$backend_storage_account_name" >> "$GITHUB_OUTPUT"
+          echo "backend_container_name=$backend_container_name" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Selected deployment values"
+            echo "- Action: $action"
+            echo "- Requested instance: $requested"
+            echo "- Selected instance: $selected"
+            echo "- Resource group: $rg_name"
+            echo "- Storage suffix: $storage_suffix"
+            echo "- Key Vault suffix: $keyvault_suffix"
+            echo "- State artifact: $state_artifact_name"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$action" = "deploy" ] && [ "$selected" != "$requested" ]; then
+            echo "Requested instance $requested already in use. Using $selected instead."
+          elif [ "$action" = "deploy" ]; then
+            echo "Using requested instance $requested."
+          fi
+
+      - name: Terraform init (local state)
+        if: inputs.action == 'deploy' || inputs.action == 'destroy'
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform test
+        if: inputs.action == 'deploy'
+        run: terraform test
 
       - name: Terraform plan
+        if: inputs.action == 'deploy'
         run: |
           terraform plan -input=false -out=tfplan \
             -var="workload=${{ inputs.workload }}" \
             -var="environment=${{ inputs.environment }}" \
             -var="location=${{ inputs.location }}" \
             -var="region_code=${{ inputs.region_code }}" \
-            -var="instance=${{ steps.instance.outputs.instance }}" \
+            -var="instance=${{ steps.naming.outputs.instance }}" \
             -var="biv=${{ inputs.biv }}" \
             -var="replication_type=${{ inputs.replication_type }}" \
             -var="storage_account_unique_suffix=${{ steps.naming.outputs.storage_suffix }}" \
@@ -192,4 +240,36 @@ jobs:
             -var="github_repository=${{ github.event.repository.name }}"
 
       - name: Terraform apply
+        if: inputs.action == 'deploy'
         run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Upload Terraform state artifact
+        if: inputs.action == 'deploy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.naming.outputs.state_artifact_name }}
+          path: terraform.tfstate
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Download Terraform state artifact
+        if: inputs.action == 'destroy'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact_name="${{ steps.naming.outputs.state_artifact_name }}"
+          artifact_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$artifact_name\" and .expired == false) | .id" | head -n 1)"
+
+          if [ -z "$artifact_id" ]; then
+            echo "No non-expired state artifact found for $artifact_name." >&2
+            exit 1
+          fi
+
+          gh api "repos/${{ github.repository }}/actions/artifacts/$artifact_id/zip" > state.zip
+          unzip -o state.zip
+          rm -f state.zip
+
+      - name: Terraform destroy
+        if: inputs.action == 'destroy'
+        run: terraform destroy -input=false -auto-approve
