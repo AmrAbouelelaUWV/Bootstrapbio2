@@ -211,22 +211,33 @@ jobs:
             backend_storage_account_name="sa${compact_workload}${{ inputs.environment }}${{ inputs.region_code }}${selected}${storage_suffix}"
             backend_container_name="${{ inputs.workload }}-${{ inputs.environment }}"
 
-            cat > deployment-manifest.json <<EOF
-            {
-              "action": "$action",
-              "workload": "${{ inputs.workload }}",
-              "environment": "${{ inputs.environment }}",
-              "region_code": "${{ inputs.region_code }}",
-              "requested_instance": "$requested",
-              "selected_instance": "$selected",
-              "resource_group_name": "$rg_name",
-              "storage_suffix": "$storage_suffix",
-              "keyvault_suffix": "$keyvault_suffix",
-              "state_artifact_name": "$state_artifact_name",
-              "backend_storage_account_name": "$backend_storage_account_name",
-              "backend_container_name": "$backend_container_name"
-            }
-            EOF
+              jq -n \
+                --arg action "$action" \
+                --arg workload "${{ inputs.workload }}" \
+                --arg environment "${{ inputs.environment }}" \
+                --arg region_code "${{ inputs.region_code }}" \
+                --arg requested_instance "$requested" \
+                --arg selected_instance "$selected" \
+                --arg resource_group_name "$rg_name" \
+                --arg storage_suffix "$storage_suffix" \
+                --arg keyvault_suffix "$keyvault_suffix" \
+                --arg state_artifact_name "$state_artifact_name" \
+                --arg backend_storage_account_name "$backend_storage_account_name" \
+                --arg backend_container_name "$backend_container_name" \
+                '{
+                  action: $action,
+                  workload: $workload,
+                  environment: $environment,
+                  region_code: $region_code,
+                  requested_instance: $requested_instance,
+                  selected_instance: $selected_instance,
+                  resource_group_name: $resource_group_name,
+                  storage_suffix: $storage_suffix,
+                  keyvault_suffix: $keyvault_suffix,
+                  state_artifact_name: $state_artifact_name,
+                  backend_storage_account_name: $backend_storage_account_name,
+                  backend_container_name: $backend_container_name
+                }' > deployment-manifest.json
           fi
 
           echo "instance=$selected" >> "$GITHUB_OUTPUT"
