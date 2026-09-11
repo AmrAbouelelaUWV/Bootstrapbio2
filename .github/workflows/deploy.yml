@@ -69,7 +69,12 @@ jobs:
         shell: bash
         run: |
           if [ -n "${{ vars.AZURE_CLIENT_ID }}" ] && [ -n "${{ vars.AZURE_TENANT_ID }}" ] && [ -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" ]; then
-            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+            echo "mode=oidc_vars" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "${{ secrets.AZURE_CLIENT_ID }}" ] && [ -n "${{ secrets.AZURE_TENANT_ID }}" ] && [ -n "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then
+            echo "mode=oidc_secrets" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -79,16 +84,24 @@ jobs:
           fi
 
           echo "No valid Azure auth configuration found." >&2
-          echo "Set environment vars AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID for OIDC, or set secret AZURE_CREDENTIALS for service principal secret auth." >&2
+          echo "Set AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID as variables or secrets, or set AZURE_CREDENTIALS for service principal secret auth." >&2
           exit 1
 
-      - name: Azure login (OIDC)
-        if: steps.auth_mode.outputs.mode == 'oidc'
+      - name: Azure login (OIDC via vars)
+        if: steps.auth_mode.outputs.mode == 'oidc_vars'
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Azure login (OIDC via secrets)
+        if: steps.auth_mode.outputs.mode == 'oidc_secrets'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Azure login (service principal secret)
         if: steps.auth_mode.outputs.mode == 'spn_secret'
