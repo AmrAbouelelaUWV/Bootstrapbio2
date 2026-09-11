@@ -54,9 +54,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-    defaults:
-      run:
-        working-directory: AZLABS-cnc-azurerm-bootstrap-terraform-state-main
     env:
       TF_IN_AUTOMATION: true
       ARM_USE_AZUREAD: true
