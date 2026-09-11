@@ -68,6 +68,9 @@ jobs:
     name: Bootstrap Deploy or Destroy
     runs-on: ubuntu-latest
     environment: ${{ inputs.github_environment }}
+    defaults:
+      run:
+        working-directory: stacks/bootstrap
     env:
       TF_IN_AUTOMATION: true
       ARM_USE_AZUREAD: true
@@ -302,7 +305,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.naming.outputs.state_artifact_name }}
-          path: terraform.tfstate
+          path: stacks/bootstrap/terraform.tfstate
           if-no-files-found: error
           retention-days: 30
 
@@ -311,7 +314,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bootstrap-manifest-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}
-          path: deployment-manifest.json
+          path: stacks/bootstrap/deployment-manifest.json
           if-no-files-found: error
           retention-days: 90
 

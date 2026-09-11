@@ -12,6 +12,9 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stacks/bootstrap
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +44,6 @@ jobs:
       - name: Checkov
         uses: bridgecrewio/checkov-action@v12
         with:
-          directory: .
+          directory: stacks/bootstrap
           quiet: true
-          config_file: .checkov.yaml
+          config_file: stacks/bootstrap/.checkov.yaml
