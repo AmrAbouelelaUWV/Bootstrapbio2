@@ -1,4 +1,4 @@
-name: Bootstrap Terraform Deploy
+name: Bootstrap Stack Deploy
 
 on:
   workflow_dispatch:
@@ -64,7 +64,8 @@ permissions:
   id-token: write
 
 jobs:
-  deploy:
+  bootstrap_deploy_destroy:
+    name: Bootstrap Deploy or Destroy
     runs-on: ubuntu-latest
     environment: ${{ inputs.github_environment }}
     env:
