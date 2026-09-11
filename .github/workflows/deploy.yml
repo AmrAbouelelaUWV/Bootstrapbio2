@@ -1,0 +1,102 @@
+name: Bootstrap Terraform Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      workload:
+        description: Bootstrap workload name
+        required: true
+        default: tfstate
+      environment:
+        description: Target environment
+        required: true
+        default: dev
+      location:
+        description: Azure region name
+        required: true
+        default: westeurope
+      region_code:
+        description: Short region code
+        required: true
+        default: we
+      instance:
+        description: Resource instance number
+        required: true
+        default: "01"
+      biv:
+        description: BIV tag value
+        required: true
+        default: "233"
+      replication_type:
+        description: Storage replication type
+        required: true
+        default: GRS
+        type: choice
+        options:
+          - LRS
+          - ZRS
+          - GRS
+          - GZRS
+      storage_account_unique_suffix:
+        description: Optional lowercase alphanumeric suffix for the storage account
+        required: false
+        default: ""
+      key_vault_unique_suffix:
+        description: Optional lowercase alphanumeric suffix for the Key Vault
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: AZLABS-cnc-azurerm-bootstrap-terraform-state-main
+    env:
+      TF_IN_AUTOMATION: true
+      ARM_USE_AZUREAD: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform test
+        run: terraform test
+
+      - name: Terraform plan
+        run: |
+          terraform plan -input=false -out=tfplan \
+            -var="workload=${{ inputs.workload }}" \
+            -var="environment=${{ inputs.environment }}" \
+            -var="location=${{ inputs.location }}" \
+            -var="region_code=${{ inputs.region_code }}" \
+            -var="instance=${{ inputs.instance }}" \
+            -var="biv=${{ inputs.biv }}" \
+            -var="replication_type=${{ inputs.replication_type }}" \
+            -var="storage_account_unique_suffix=${{ inputs.storage_account_unique_suffix }}" \
+            -var="key_vault_unique_suffix=${{ inputs.key_vault_unique_suffix }}" \
+            -var="github_owner=${{ github.repository_owner }}" \
+            -var="github_repository=${{ github.event.repository.name }}"
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve tfplan

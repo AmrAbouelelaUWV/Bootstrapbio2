@@ -13,9 +13,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: AZLABS-cnc-azurerm-bootstrap-terraform-state-main
     steps:
       - uses: actions/checkout@v4
         with:
