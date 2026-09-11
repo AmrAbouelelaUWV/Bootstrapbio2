@@ -64,12 +64,37 @@ jobs:
         with:
           terraform_version: "1.15.8"
 
-      - name: Azure login
+      - name: Determine Azure auth mode
+        id: auth_mode
+        shell: bash
+        run: |
+          if [ -n "${{ vars.AZURE_CLIENT_ID }}" ] && [ -n "${{ vars.AZURE_TENANT_ID }}" ] && [ -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" ]; then
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+            echo "mode=spn_secret" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "No valid Azure auth configuration found." >&2
+          echo "Set environment vars AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID for OIDC, or set secret AZURE_CREDENTIALS for service principal secret auth." >&2
+          exit 1
+
+      - name: Azure login (OIDC)
+        if: steps.auth_mode.outputs.mode == 'oidc'
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Azure login (service principal secret)
+        if: steps.auth_mode.outputs.mode == 'spn_secret'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Terraform init
         run: terraform init -input=false
