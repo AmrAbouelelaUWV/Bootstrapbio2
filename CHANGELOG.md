@@ -1,3 +1,10 @@
+# 1.0.0 (2026-09-11)
+
+
+### Bug Fixes
+
+* **ci:** run workflows from repository root ([bac0174](https://github.com/nluwv/AZLABS-showcase/commit/bac017487c1b4ff33e443c7280c3d65d01907646))
+
 # 1.0.0 (2026-09-09)
 
 
