@@ -113,6 +113,42 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Resolve free instance number
+        id: instance
+        shell: bash
+        run: |
+          requested="${{ inputs.instance }}"
+
+          if ! [[ "$requested" =~ ^[0-9]{2}$ ]]; then
+            echo "Input instance must be exactly two digits (for example 01)." >&2
+            exit 1
+          fi
+
+          selected=""
+          start=$((10#$requested))
+
+          for i in $(seq "$start" 99); do
+            candidate="$(printf '%02d' "$i")"
+            rg_name="rg-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}-${candidate}"
+            if [ "$(az group exists --name "$rg_name")" = "false" ]; then
+              selected="$candidate"
+              echo "resource_group_name=$rg_name" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
+
+          if [ -z "$selected" ]; then
+            echo "No free instance found from $requested to 99." >&2
+            exit 1
+          fi
+
+          echo "instance=$selected" >> "$GITHUB_OUTPUT"
+          if [ "$selected" != "$requested" ]; then
+            echo "Requested instance $requested already in use. Using $selected instead."
+          else
+            echo "Using requested instance $requested."
+          fi
+
       - name: Terraform init
         run: terraform init -input=false
 
@@ -147,7 +183,7 @@ jobs:
             -var="environment=${{ inputs.environment }}" \
             -var="location=${{ inputs.location }}" \
             -var="region_code=${{ inputs.region_code }}" \
-            -var="instance=${{ inputs.instance }}" \
+            -var="instance=${{ steps.instance.outputs.instance }}" \
             -var="biv=${{ inputs.biv }}" \
             -var="replication_type=${{ inputs.replication_type }}" \
             -var="storage_account_unique_suffix=${{ steps.naming.outputs.storage_suffix }}" \
