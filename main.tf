@@ -100,7 +100,7 @@ resource "azurerm_user_assigned_identity" "terraform" {
 
 resource "azurerm_federated_identity_credential" "github" {
   name      = local.credential_name
-  parent_id = azurerm_user_assigned_identity.terraform.id
+  user_assigned_identity_id = azurerm_user_assigned_identity.terraform.id
   audience  = ["api://AzureADTokenExchange"]
   issuer    = "https://token.actions.githubusercontent.com"
   subject   = "repo:${var.github_owner}/${var.github_repository}:environment:${var.environment}"

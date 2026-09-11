@@ -122,6 +122,24 @@ jobs:
       - name: Terraform test
         run: terraform test
 
+      - name: Compute unique suffixes
+        id: naming
+        shell: bash
+        run: |
+          storage_suffix="${{ inputs.storage_account_unique_suffix }}"
+          keyvault_suffix="${{ inputs.key_vault_unique_suffix }}"
+
+          if [ -z "$storage_suffix" ]; then
+            storage_suffix="$(printf '%06d' "$GITHUB_RUN_NUMBER" | tail -c 7)"
+          fi
+
+          if [ -z "$keyvault_suffix" ]; then
+            keyvault_suffix="$(printf '%03d' "$GITHUB_RUN_NUMBER" | tail -c 4)"
+          fi
+
+          echo "storage_suffix=$storage_suffix" >> "$GITHUB_OUTPUT"
+          echo "keyvault_suffix=$keyvault_suffix" >> "$GITHUB_OUTPUT"
+
       - name: Terraform plan
         run: |
           terraform plan -input=false -out=tfplan \
@@ -132,8 +150,8 @@ jobs:
             -var="instance=${{ inputs.instance }}" \
             -var="biv=${{ inputs.biv }}" \
             -var="replication_type=${{ inputs.replication_type }}" \
-            -var="storage_account_unique_suffix=${{ inputs.storage_account_unique_suffix }}" \
-            -var="key_vault_unique_suffix=${{ inputs.key_vault_unique_suffix }}" \
+            -var="storage_account_unique_suffix=${{ steps.naming.outputs.storage_suffix }}" \
+            -var="key_vault_unique_suffix=${{ steps.naming.outputs.keyvault_suffix }}" \
             -var="github_owner=${{ github.repository_owner }}" \
             -var="github_repository=${{ github.event.repository.name }}"
 
