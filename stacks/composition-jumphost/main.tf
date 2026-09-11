@@ -42,7 +42,7 @@ resource "azurerm_resource_group" "this" {
 }
 
 module "network" {
-  source = "git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-network.git?ref=v0.1.2"
+  source = "../../modules/network"
 
   name                = local.network_name
   resource_group_name = azurerm_resource_group.this.name
@@ -99,7 +99,7 @@ module "network" {
 }
 
 module "bastion_access" {
-  source = "git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-stack-bastion-access.git?ref=v0.0.2"
+  source = "../composition-bastion-access"
 
   workload                                   = var.workload
   environment                                = var.environment
@@ -119,7 +119,7 @@ module "bastion_access" {
 }
 
 module "vms" {
-  source = "git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-vms.git?ref=v0.1.1"
+  source = "../../modules/vms"
 
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
