@@ -125,6 +125,8 @@ jobs:
       - name: Resolve instance and naming
         id: naming
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           action="${{ inputs.action }}"
           requested="${{ inputs.instance }}"
@@ -165,27 +167,67 @@ jobs:
           storage_suffix="${{ inputs.storage_account_unique_suffix }}"
           keyvault_suffix="${{ inputs.key_vault_unique_suffix }}"
 
-          if [ "$action" = "destroy" ]; then
-            if [ -z "$storage_suffix" ] || [ -z "$keyvault_suffix" ]; then
-              echo "Destroy requires the same storage_account_unique_suffix and key_vault_unique_suffix that were used during deploy." >&2
-              exit 1
-            fi
-          fi
-
-          if [ -z "$storage_suffix" ]; then
-            storage_suffix="$(printf '%06d' "$GITHUB_RUN_NUMBER" | tail -c 7)"
-          fi
-
-          if [ -z "$keyvault_suffix" ]; then
-            keyvault_suffix="$(printf '%03d' "$GITHUB_RUN_NUMBER" | tail -c 4)"
-          fi
-
           compact_workload="${{ inputs.workload }}"
           compact_workload="${compact_workload//-/}"
 
-          state_artifact_name="bootstrap-state-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}-${selected}-${storage_suffix}-${keyvault_suffix}"
-          backend_storage_account_name="sa${compact_workload}${{ inputs.environment }}${{ inputs.region_code }}${selected}${storage_suffix}"
-          backend_container_name="${{ inputs.workload }}-${{ inputs.environment }}"
+          if [ "$action" = "destroy" ]; then
+            manifest_name="bootstrap-manifest-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}"
+            manifest_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$manifest_name\" and .expired == false) | .id" | head -n 1)"
+
+            if [ -z "$manifest_id" ]; then
+              echo "No non-expired deployment manifest found for $manifest_name." >&2
+              exit 1
+            fi
+
+            gh api "repos/${{ github.repository }}/actions/artifacts/$manifest_id/zip" > manifest.zip
+            unzip -o manifest.zip deployment-manifest.json >/dev/null
+            rm -f manifest.zip
+
+            storage_suffix="$(jq -r '.storage_suffix' deployment-manifest.json)"
+            keyvault_suffix="$(jq -r '.keyvault_suffix' deployment-manifest.json)"
+            selected="$(jq -r '.selected_instance' deployment-manifest.json)"
+
+            if [ -z "$storage_suffix" ] || [ "$storage_suffix" = "null" ] || [ -z "$keyvault_suffix" ] || [ "$keyvault_suffix" = "null" ]; then
+              echo "Deployment manifest did not contain the required suffixes for destroy." >&2
+              exit 1
+            fi
+
+            state_artifact_name="$(jq -r '.state_artifact_name' deployment-manifest.json)"
+            backend_storage_account_name="$(jq -r '.backend_storage_account_name' deployment-manifest.json)"
+            backend_container_name="$(jq -r '.backend_container_name' deployment-manifest.json)"
+            rg_name="$(jq -r '.resource_group_name' deployment-manifest.json)"
+
+            rm -f deployment-manifest.json
+          else
+            if [ -z "$storage_suffix" ]; then
+              storage_suffix="$(printf '%06d' "$GITHUB_RUN_NUMBER" | tail -c 7)"
+            fi
+
+            if [ -z "$keyvault_suffix" ]; then
+              keyvault_suffix="$(printf '%03d' "$GITHUB_RUN_NUMBER" | tail -c 4)"
+            fi
+
+            state_artifact_name="bootstrap-state-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}-${selected}-${storage_suffix}-${keyvault_suffix}"
+            backend_storage_account_name="sa${compact_workload}${{ inputs.environment }}${{ inputs.region_code }}${selected}${storage_suffix}"
+            backend_container_name="${{ inputs.workload }}-${{ inputs.environment }}"
+
+            cat > deployment-manifest.json <<EOF
+            {
+              "action": "$action",
+              "workload": "${{ inputs.workload }}",
+              "environment": "${{ inputs.environment }}",
+              "region_code": "${{ inputs.region_code }}",
+              "requested_instance": "$requested",
+              "selected_instance": "$selected",
+              "resource_group_name": "$rg_name",
+              "storage_suffix": "$storage_suffix",
+              "keyvault_suffix": "$keyvault_suffix",
+              "state_artifact_name": "$state_artifact_name",
+              "backend_storage_account_name": "$backend_storage_account_name",
+              "backend_container_name": "$backend_container_name"
+            }
+            EOF
+          fi
 
           echo "instance=$selected" >> "$GITHUB_OUTPUT"
           echo "resource_group_name=$rg_name" >> "$GITHUB_OUTPUT"
@@ -205,23 +247,6 @@ jobs:
             echo "- Key Vault suffix: $keyvault_suffix"
             echo "- State artifact: $state_artifact_name"
           } >> "$GITHUB_STEP_SUMMARY"
-
-          cat > deployment-manifest.json <<EOF
-          {
-            "action": "$action",
-            "workload": "${{ inputs.workload }}",
-            "environment": "${{ inputs.environment }}",
-            "region_code": "${{ inputs.region_code }}",
-            "requested_instance": "$requested",
-            "selected_instance": "$selected",
-            "resource_group_name": "$rg_name",
-            "storage_suffix": "$storage_suffix",
-            "keyvault_suffix": "$keyvault_suffix",
-            "state_artifact_name": "$state_artifact_name",
-            "backend_storage_account_name": "$backend_storage_account_name",
-            "backend_container_name": "$backend_container_name"
-          }
-          EOF
 
           if [ "$action" = "deploy" ] && [ "$selected" != "$requested" ]; then
             echo "Requested instance $requested already in use. Using $selected instead."
@@ -284,25 +309,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          manifest_name="bootstrap-manifest-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}"
-          manifest_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$manifest_name\" and .expired == false) | .id" | head -n 1)"
-
-          if [ -z "$manifest_id" ]; then
-            echo "No non-expired deployment manifest found for $manifest_name." >&2
-            exit 1
-          fi
-
-          gh api "repos/${{ github.repository }}/actions/artifacts/$manifest_id/zip" > manifest.zip
-          unzip -o manifest.zip deployment-manifest.json
-          rm -f manifest.zip
-
-          state_artifact_name="$(jq -r '.state_artifact_name' deployment-manifest.json)"
-
-          if [ -z "$state_artifact_name" ] || [ "$state_artifact_name" = "null" ]; then
-            echo "Deployment manifest did not contain a state artifact name." >&2
-            exit 1
-          fi
-
+          state_artifact_name="${{ steps.naming.outputs.state_artifact_name }}"
           artifact_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$state_artifact_name\" and .expired == false) | .id" | head -n 1)"
 
           if [ -z "$artifact_id" ]; then
