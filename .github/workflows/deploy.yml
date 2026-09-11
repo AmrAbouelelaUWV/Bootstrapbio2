@@ -334,4 +334,16 @@ jobs:
 
       - name: Terraform destroy
         if: inputs.action == 'destroy'
-        run: terraform destroy -input=false -auto-approve
+        run: |
+          terraform destroy -input=false -auto-approve \
+            -var="workload=${{ inputs.workload }}" \
+            -var="environment=${{ inputs.environment }}" \
+            -var="location=${{ inputs.location }}" \
+            -var="region_code=${{ inputs.region_code }}" \
+            -var="instance=${{ steps.naming.outputs.instance }}" \
+            -var="biv=${{ inputs.biv }}" \
+            -var="replication_type=${{ inputs.replication_type }}" \
+            -var="storage_account_unique_suffix=${{ steps.naming.outputs.storage_suffix }}" \
+            -var="key_vault_unique_suffix=${{ steps.naming.outputs.keyvault_suffix }}" \
+            -var="github_owner=${{ github.repository_owner }}" \
+            -var="github_repository=${{ github.event.repository.name }}"
