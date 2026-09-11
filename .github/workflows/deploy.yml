@@ -206,6 +206,23 @@ jobs:
             echo "- State artifact: $state_artifact_name"
           } >> "$GITHUB_STEP_SUMMARY"
 
+          cat > deployment-manifest.json <<EOF
+          {
+            "action": "$action",
+            "workload": "${{ inputs.workload }}",
+            "environment": "${{ inputs.environment }}",
+            "region_code": "${{ inputs.region_code }}",
+            "requested_instance": "$requested",
+            "selected_instance": "$selected",
+            "resource_group_name": "$rg_name",
+            "storage_suffix": "$storage_suffix",
+            "keyvault_suffix": "$keyvault_suffix",
+            "state_artifact_name": "$state_artifact_name",
+            "backend_storage_account_name": "$backend_storage_account_name",
+            "backend_container_name": "$backend_container_name"
+          }
+          EOF
+
           if [ "$action" = "deploy" ] && [ "$selected" != "$requested" ]; then
             echo "Requested instance $requested already in use. Using $selected instead."
           elif [ "$action" = "deploy" ]; then
@@ -252,23 +269,50 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Upload deployment manifest
+        if: inputs.action == 'deploy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-manifest-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}
+          path: deployment-manifest.json
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Download Terraform state artifact
         if: inputs.action == 'destroy'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          artifact_name="${{ steps.naming.outputs.state_artifact_name }}"
-          artifact_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$artifact_name\" and .expired == false) | .id" | head -n 1)"
+          manifest_name="bootstrap-manifest-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}"
+          manifest_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$manifest_name\" and .expired == false) | .id" | head -n 1)"
+
+          if [ -z "$manifest_id" ]; then
+            echo "No non-expired deployment manifest found for $manifest_name." >&2
+            exit 1
+          fi
+
+          gh api "repos/${{ github.repository }}/actions/artifacts/$manifest_id/zip" > manifest.zip
+          unzip -o manifest.zip deployment-manifest.json
+          rm -f manifest.zip
+
+          state_artifact_name="$(jq -r '.state_artifact_name' deployment-manifest.json)"
+
+          if [ -z "$state_artifact_name" ] || [ "$state_artifact_name" = "null" ]; then
+            echo "Deployment manifest did not contain a state artifact name." >&2
+            exit 1
+          fi
+
+          artifact_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$state_artifact_name\" and .expired == false) | .id" | head -n 1)"
 
           if [ -z "$artifact_id" ]; then
-            echo "No non-expired state artifact found for $artifact_name." >&2
+            echo "No non-expired state artifact found for $state_artifact_name." >&2
             exit 1
           fi
 
           gh api "repos/${{ github.repository }}/actions/artifacts/$artifact_id/zip" > state.zip
           unzip -o state.zip
-          rm -f state.zip
+          rm -f state.zip deployment-manifest.json
 
       - name: Terraform destroy
         if: inputs.action == 'destroy'
