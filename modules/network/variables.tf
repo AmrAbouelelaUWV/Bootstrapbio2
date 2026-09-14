@@ -37,8 +37,9 @@ variable "dns_servers" {
 variable "subnets" {
   description = "Subnets keyed by subnet name."
   type = map(object({
-    address_prefixes  = list(string)
-    service_endpoints = optional(list(string), [])
+    address_prefixes                        = list(string)
+    service_endpoints                       = optional(list(string), [])
+    private_endpoint_network_policies_state = optional(string, "Enabled")
     delegations = optional(map(object({
       service_name = string
       actions      = list(string)

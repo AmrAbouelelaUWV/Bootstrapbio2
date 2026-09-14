@@ -52,6 +52,7 @@ resource "azurerm_linux_virtual_machine" "this" {
   os_disk {
     caching              = each.value.os_disk.caching
     storage_account_type = each.value.os_disk.storage_account_type
+    disk_encryption_set_id = each.value.disk_encryption_set_id
   }
 
   dynamic "source_image_reference" {
@@ -93,6 +94,7 @@ resource "azurerm_windows_virtual_machine" "this" {
   os_disk {
     caching              = each.value.os_disk.caching
     storage_account_type = each.value.os_disk.storage_account_type
+    disk_encryption_set_id = each.value.disk_encryption_set_id
   }
 
   dynamic "source_image_reference" {
