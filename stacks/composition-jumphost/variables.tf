@@ -9,12 +9,12 @@ variable "workload" {
 }
 
 variable "environment" {
-  description = "Environment code, for example dev, acc, or prd."
+  description = "Environment code, for example o, t, a, p, dev, acc, or prd."
   type        = string
 
   validation {
     condition     = can(regex("^[a-z0-9]{1,5}$", var.environment))
-    error_message = "Environment must be a short lowercase code."
+    error_message = "Environment must be a short lowercase code (for example o, t, a, p, dev, acc, or prd)."
   }
 }
 
