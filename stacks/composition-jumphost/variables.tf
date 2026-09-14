@@ -13,7 +13,7 @@ variable "environment" {
   type        = string
 
   validation {
-    condition     = can(regex("^[a-z0-9]{2,5}$", var.environment))
+    condition     = can(regex("^[a-z0-9]{1,5}$", var.environment))
     error_message = "Environment must be a short lowercase code."
   }
 }
