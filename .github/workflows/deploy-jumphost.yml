@@ -67,6 +67,14 @@ on:
         description: JSON map of Windows admin passwords
         required: false
         default: '{}'
+      linux_admin_ssh_public_key:
+        description: SSH public key for Linux VM (required when enable_linux_vm is true)
+        required: false
+        default: ""
+      windows_admin_password:
+        description: Windows admin password for logical VM key windows (optional, merged into admin_passwords)
+        required: false
+        default: ""
       enable_linux_vm:
         description: Deploy Linux management VM
         required: true
@@ -174,25 +182,91 @@ jobs:
       - name: Terraform validate
         run: terraform validate
 
+      - name: Validate VM credential inputs
+        shell: bash
+        run: |
+          if [ "${{ inputs.enable_linux_vm }}" = "true" ] && [ -z "${{ inputs.linux_admin_ssh_public_key }}" ]; then
+            echo "linux_admin_ssh_public_key is required when enable_linux_vm=true." >&2
+            exit 1
+          fi
+
+          if [ "${{ inputs.enable_windows_vm }}" = "true" ] && [ -z "${{ inputs.windows_admin_password }}" ] && [ "${{ inputs.admin_passwords_json }}" = "{}" ]; then
+            echo "Provide windows_admin_password or admin_passwords_json when enable_windows_vm=true." >&2
+            exit 1
+          fi
+
+      - name: Build runtime tfvars
+        shell: bash
+        run: |
+          if ! echo '${{ inputs.address_space_json }}' | jq -e type >/dev/null 2>&1; then
+            echo "address_space_json must be valid JSON." >&2
+            exit 1
+          fi
+
+          if ! echo '${{ inputs.bastion_address_space_json }}' | jq -e type >/dev/null 2>&1; then
+            echo "bastion_address_space_json must be valid JSON." >&2
+            exit 1
+          fi
+
+          if ! echo '${{ inputs.admin_login_principal_ids_json }}' | jq -e 'type == "object"' >/dev/null 2>&1; then
+            echo "admin_login_principal_ids_json must be a JSON object." >&2
+            exit 1
+          fi
+
+          if ! echo '${{ inputs.user_login_principal_ids_json }}' | jq -e 'type == "object"' >/dev/null 2>&1; then
+            echo "user_login_principal_ids_json must be a JSON object." >&2
+            exit 1
+          fi
+
+          if ! echo '${{ inputs.admin_passwords_json }}' | jq -e 'type == "object"' >/dev/null 2>&1; then
+            echo "admin_passwords_json must be a JSON object." >&2
+            exit 1
+          fi
+
+          effective_admin_passwords='${{ inputs.admin_passwords_json }}'
+          if [ -n "${{ inputs.windows_admin_password }}" ]; then
+            effective_admin_passwords="$(jq -cn --argjson base '${{ inputs.admin_passwords_json }}' --arg pwd '${{ inputs.windows_admin_password }}' '$base + {windows: $pwd}')"
+          fi
+
+          jq -n \
+            --arg workload "${{ inputs.workload }}" \
+            --arg environment "${{ inputs.environment }}" \
+            --arg location "${{ inputs.location }}" \
+            --arg region_code "${{ inputs.region_code }}" \
+            --arg instance "${{ inputs.instance }}" \
+            --arg biv "${{ inputs.biv }}" \
+            --arg management_subnet_prefix "${{ inputs.management_subnet_prefix }}" \
+            --arg bastion_subnet_prefix "${{ inputs.bastion_subnet_prefix }}" \
+            --arg linux_admin_ssh_public_key "${{ inputs.linux_admin_ssh_public_key }}" \
+            --argjson address_space '${{ inputs.address_space_json }}' \
+            --argjson bastion_address_space '${{ inputs.bastion_address_space_json }}' \
+            --argjson admin_login_principal_ids '${{ inputs.admin_login_principal_ids_json }}' \
+            --argjson user_login_principal_ids '${{ inputs.user_login_principal_ids_json }}' \
+            --argjson admin_passwords "$effective_admin_passwords" \
+            --argjson enable_linux_vm ${{ inputs.enable_linux_vm }} \
+            --argjson enable_windows_vm ${{ inputs.enable_windows_vm }} \
+            '{
+              workload: $workload,
+              environment: $environment,
+              location: $location,
+              region_code: $region_code,
+              instance: $instance,
+              biv: $biv,
+              address_space: $address_space,
+              management_subnet_prefix: $management_subnet_prefix,
+              bastion_address_space: $bastion_address_space,
+              bastion_subnet_prefix: $bastion_subnet_prefix,
+              admin_login_principal_ids: $admin_login_principal_ids,
+              user_login_principal_ids: $user_login_principal_ids,
+              admin_passwords: $admin_passwords,
+              enable_linux_vm: $enable_linux_vm,
+              enable_windows_vm: $enable_windows_vm,
+              linux_vm: (if ($linux_admin_ssh_public_key | length) > 0 then { admin_ssh_public_key: $linux_admin_ssh_public_key } else {} end)
+            }' > runtime.auto.tfvars.json
+
       - name: Terraform plan
         if: inputs.action == 'deploy'
-        run: |
-          terraform plan -input=false -out=tfplan \
-            -var="workload=${{ inputs.workload }}" \
-            -var="environment=${{ inputs.environment }}" \
-            -var="location=${{ inputs.location }}" \
-            -var="region_code=${{ inputs.region_code }}" \
-            -var="instance=${{ inputs.instance }}" \
-            -var="biv=${{ inputs.biv }}" \
-            -var='address_space=${{ inputs.address_space_json }}' \
-            -var="management_subnet_prefix=${{ inputs.management_subnet_prefix }}" \
-            -var='bastion_address_space=${{ inputs.bastion_address_space_json }}' \
-            -var="bastion_subnet_prefix=${{ inputs.bastion_subnet_prefix }}" \
-            -var='admin_login_principal_ids=${{ inputs.admin_login_principal_ids_json }}' \
-            -var='user_login_principal_ids=${{ inputs.user_login_principal_ids_json }}' \
-            -var='admin_passwords=${{ inputs.admin_passwords_json }}' \
-            -var="enable_linux_vm=${{ inputs.enable_linux_vm }}" \
-            -var="enable_windows_vm=${{ inputs.enable_windows_vm }}"
+        run: terraform plan -input=false -out=tfplan
 
       - name: Terraform apply
         if: inputs.action == 'deploy'
@@ -209,20 +283,4 @@ jobs:
 
       - name: Terraform destroy
         if: inputs.action == 'destroy'
-        run: |
-          terraform destroy -input=false -auto-approve \
-            -var="workload=${{ inputs.workload }}" \
-            -var="environment=${{ inputs.environment }}" \
-            -var="location=${{ inputs.location }}" \
-            -var="region_code=${{ inputs.region_code }}" \
-            -var="instance=${{ inputs.instance }}" \
-            -var="biv=${{ inputs.biv }}" \
-            -var='address_space=${{ inputs.address_space_json }}' \
-            -var="management_subnet_prefix=${{ inputs.management_subnet_prefix }}" \
-            -var='bastion_address_space=${{ inputs.bastion_address_space_json }}' \
-            -var="bastion_subnet_prefix=${{ inputs.bastion_subnet_prefix }}" \
-            -var='admin_login_principal_ids=${{ inputs.admin_login_principal_ids_json }}' \
-            -var='user_login_principal_ids=${{ inputs.user_login_principal_ids_json }}' \
-            -var='admin_passwords=${{ inputs.admin_passwords_json }}' \
-            -var="enable_linux_vm=${{ inputs.enable_linux_vm }}" \
-            -var="enable_windows_vm=${{ inputs.enable_windows_vm }}"
+        run: terraform destroy -input=false -auto-approve
