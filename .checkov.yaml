@@ -1,9 +1,0 @@
-skip-check:
-  - CKV_AZURE_59 # Terraform state backend uses Azure AD auth with shared access keys disabled; storage public network hardening is landing-zone specific.
-  - CKV_AZURE_33 # Queue logging is configured with azurerm_storage_account_queue_properties; plan check does not correlate it to the storage account.
-  - CKV_AZURE_189 # Bootstrap Key Vault is created before private networking exists; firewall default denies public callers.
-  - CKV2_AZURE_32 # Bootstrap runs pre-network baseline; Key Vault private endpoint is added in downstream landing-zone layers.
-  - CKV2_AZURE_33 # Bootstrap state account is intentionally created before private endpoint routing exists.
-  - CKV2_AZURE_1 # CMK wiring for storage is deferred to post-bootstrap managed key lifecycle.
-  - CKV2_AZURE_21 # Blob logging check mis-maps to container resource in this provider graph; account telemetry controls are enforced separately.
-  - CKV_GHA_7 # Manual workflow_dispatch inputs are intentional for controlled one-time bootstrap in protected environments.

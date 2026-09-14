@@ -1,2 +1,0 @@
-skip-check:
-  - CKV2_AZURE_31 # This generic network module supports subnet creation and optional NSG association; stacks enforce required NSGs.

@@ -1,2 +1,0 @@
-skip-check:
-  - CKV_TF_1 # Company standard requires exact immutable release tags for private Terraform building blocks.
