@@ -29,7 +29,7 @@ resource "azurerm_subnet" "this" {
     }
   }
 }
-# blaa
+
 resource "azurerm_network_security_group" "this" {
   for_each = var.network_security_groups
 
@@ -47,10 +47,14 @@ resource "azurerm_network_security_group" "this" {
       direction                    = security_rule.value.direction
       access                       = security_rule.value.access
       protocol                     = security_rule.value.protocol
-      source_port_ranges           = security_rule.value.source_port_ranges
-      destination_port_ranges      = security_rule.value.destination_port_ranges
-      source_address_prefixes      = security_rule.value.source_address_prefixes
-      destination_address_prefixes = security_rule.value.destination_address_prefixes
+      source_port_range            = length(security_rule.value.source_port_ranges) == 1 ? security_rule.value.source_port_ranges[0] : null
+      source_port_ranges           = length(security_rule.value.source_port_ranges) > 1 ? security_rule.value.source_port_ranges : null
+      destination_port_range       = length(security_rule.value.destination_port_ranges) == 1 ? security_rule.value.destination_port_ranges[0] : null
+      destination_port_ranges      = length(security_rule.value.destination_port_ranges) > 1 ? security_rule.value.destination_port_ranges : null
+      source_address_prefix        = length(security_rule.value.source_address_prefixes) == 1 ? security_rule.value.source_address_prefixes[0] : null
+      source_address_prefixes      = length(security_rule.value.source_address_prefixes) > 1 ? security_rule.value.source_address_prefixes : null
+      destination_address_prefix   = length(security_rule.value.destination_address_prefixes) == 1 ? security_rule.value.destination_address_prefixes[0] : null
+      destination_address_prefixes = length(security_rule.value.destination_address_prefixes) > 1 ? security_rule.value.destination_address_prefixes : null
     }
   }
 }

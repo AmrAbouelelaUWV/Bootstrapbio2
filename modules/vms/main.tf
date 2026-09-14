@@ -8,6 +8,11 @@ locals {
     for name, vm in var.vms : name => vm
     if vm.os_type == "windows"
   }
+
+  windows_computer_names = {
+    for name, vm in local.windows_vms :
+    name => substr(regexreplace(vm.name, "[^0-9A-Za-z-]", ""), 0, 15)
+  }
 }
 
 resource "azurerm_network_interface" "this" {
@@ -74,6 +79,7 @@ resource "azurerm_windows_virtual_machine" "this" {
   for_each = local.windows_vms
 
   name                       = each.value.name
+  computer_name              = local.windows_computer_names[each.key]
   location                   = var.location
   resource_group_name        = var.resource_group_name
   size                       = each.value.size
