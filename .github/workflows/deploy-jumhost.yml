@@ -17,7 +17,7 @@ on:
         required: true
         default: Development
       terraform_environment:
-        description: Terraform environment (selects environments/<env>.tfvars.json)
+        description: OTAP selector; maps o/t/a/p to dev/tst/acc/prd and selects optional environments/<code>.tfvars.json
         required: true
         type: choice
         default: t
@@ -52,9 +52,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.github_environment }}
-    defaults:
-      run:
-        working-directory: stacks/composition-jumphost
     env:
       TF_IN_AUTOMATION: true
       ARM_USE_AZUREAD: true
@@ -121,10 +118,35 @@ jobs:
         id: vm_creds
         shell: bash
         run: |
-          tfvars_file="environments/${{ inputs.terraform_environment }}.tfvars.json"
+          case "${{ inputs.terraform_environment }}" in
+            o) environment_code="dev" ;;
+            t) environment_code="tst" ;;
+            a) environment_code="acc" ;;
+            p) environment_code="prd" ;;
+            *)
+              echo "terraform_environment must be one of: o, t, a, p." >&2
+              exit 1
+              ;;
+          esac
+
+          tfvars_file="environments/${environment_code}.tfvars.json"
           if [ ! -f "$tfvars_file" ]; then
-            echo "Expected tfvars file not found: $tfvars_file" >&2
-            exit 1
+            echo "No tfvars file found at $tfvars_file. Generating workflow fallback tfvars." >&2
+            jq -n \
+              --arg environment "$environment_code" \
+              '{
+                workload: "management",
+                environment: $environment,
+                location: "westeurope",
+                region_code: "we",
+                address_space: ["10.10.0.0/16"],
+                management_subnet_prefix: "10.10.1.0/24",
+                bastion_address_space: ["10.90.0.0/24"],
+                bastion_subnet_prefix: "10.90.0.0/26",
+                enable_linux_vm: true,
+                enable_windows_vm: true
+              }' > generated.tfvars.json
+            tfvars_file="generated.tfvars.json"
           fi
 
           linux_enabled="$(jq -r '.enable_linux_vm // false' "$tfvars_file")"
@@ -153,6 +175,7 @@ jobs:
           fi
 
           echo "tfvars_file=$tfvars_file" >> "$GITHUB_OUTPUT"
+          echo "environment_code=$environment_code" >> "$GITHUB_OUTPUT"
           echo "linux_enabled=$linux_enabled" >> "$GITHUB_OUTPUT"
           echo "windows_enabled=$windows_enabled" >> "$GITHUB_OUTPUT"
 
@@ -177,7 +200,7 @@ jobs:
           tfvars_file="${{ steps.vm_creds.outputs.tfvars_file }}"
           workload="$(jq -r '.workload' "$tfvars_file")"
           region_code="$(jq -r '.region_code' "$tfvars_file")"
-          environment="${{ inputs.terraform_environment }}"
+          environment="${{ steps.vm_creds.outputs.environment_code }}"
           action="${{ inputs.action }}"
           selected="$requested"
 
@@ -228,7 +251,7 @@ jobs:
           fi
 
           jq -n \
-            --arg environment "${{ inputs.terraform_environment }}" \
+            --arg environment "${{ steps.vm_creds.outputs.environment_code }}" \
             --arg instance "${{ steps.state.outputs.selected_instance }}" \
             --arg biv "${{ inputs.biv }}" \
             --arg linux_admin_ssh_public_key "${{ steps.vm_creds.outputs.linux_key }}" \
@@ -258,7 +281,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.state.outputs.name }}
-          path: stacks/composition-jumphost/terraform.tfstate
+          path: terraform.tfstate
           if-no-files-found: error
           retention-days: 30
 
