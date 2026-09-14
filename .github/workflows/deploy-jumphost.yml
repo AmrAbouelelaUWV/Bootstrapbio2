@@ -111,30 +111,6 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Resolve state artifact name
-        id: state
-        shell: bash
-        run: |
-          echo "name=jumphost-state-${{ inputs.terraform_environment }}-${{ inputs.instance }}" >> "$GITHUB_OUTPUT"
-
-      - name: Download Terraform state artifact
-        if: inputs.action == 'destroy'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          state_artifact_name="${{ steps.state.outputs.name }}"
-          artifact_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$state_artifact_name\" and .expired == false) | .id" | head -n 1)"
-
-          if [ -z "$artifact_id" ]; then
-            echo "No non-expired state artifact found for $state_artifact_name." >&2
-            exit 1
-          fi
-
-          gh api "repos/${{ github.repository }}/actions/artifacts/$artifact_id/zip" > state.zip
-          unzip -o state.zip
-          rm -f state.zip
-
       - name: Terraform init
         run: terraform init -input=false
 
@@ -188,6 +164,60 @@ jobs:
           echo "$windows_password" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve instance and state artifact name
+        id: state
+        shell: bash
+        run: |
+          requested="${{ inputs.instance }}"
+          if ! [[ "$requested" =~ ^[0-9]{2}$ ]]; then
+            echo "instance must be exactly two digits, for example 01." >&2
+            exit 1
+          fi
+
+          tfvars_file="${{ steps.vm_creds.outputs.tfvars_file }}"
+          workload="$(jq -r '.workload' "$tfvars_file")"
+          region_code="$(jq -r '.region_code' "$tfvars_file")"
+          environment="${{ inputs.terraform_environment }}"
+          action="${{ inputs.action }}"
+          selected="$requested"
+
+          if [ "$action" = "deploy" ]; then
+            start=$((10#$requested))
+
+            for i in $(seq "$start" 99); do
+              candidate="$(printf '%02d' "$i")"
+              rg_name="rg-${workload}-${environment}-${region_code}-${candidate}"
+              if [ "$(az group exists --name "$rg_name")" = "false" ]; then
+                selected="$candidate"
+                break
+              fi
+            done
+
+            if [ -z "$selected" ]; then
+              echo "No free instance found between $requested and 99." >&2
+              exit 1
+            fi
+          fi
+
+          state_name="jumphost-state-${environment}-${selected}"
+          rg_name="rg-${workload}-${environment}-${region_code}-${selected}"
+
+          echo "selected_instance=$selected" >> "$GITHUB_OUTPUT"
+          echo "name=$state_name" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Instance selection"
+            echo "- Action: $action"
+            echo "- Requested instance: $requested"
+            echo "- Selected instance: $selected"
+            echo "- Resource group name: $rg_name"
+            echo "- State artifact name: $state_name"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$action" = "deploy" ] && [ "$requested" != "$selected" ]; then
+            echo "Requested instance $requested already exists; using $selected."
+          fi
+
       - name: Build runtime tfvars
         shell: bash
         run: |
@@ -199,7 +229,7 @@ jobs:
 
           jq -n \
             --arg environment "${{ inputs.terraform_environment }}" \
-            --arg instance "${{ inputs.instance }}" \
+            --arg instance "${{ steps.state.outputs.selected_instance }}" \
             --arg biv "${{ inputs.biv }}" \
             --arg linux_admin_ssh_public_key "${{ steps.vm_creds.outputs.linux_key }}" \
             --argjson admin_passwords "$effective_admin_passwords" \
@@ -231,6 +261,24 @@ jobs:
           path: stacks/composition-jumphost/terraform.tfstate
           if-no-files-found: error
           retention-days: 30
+
+      - name: Download Terraform state artifact
+        if: inputs.action == 'destroy'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state_artifact_name="${{ steps.state.outputs.name }}"
+          artifact_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$state_artifact_name\" and .expired == false) | .id" | head -n 1)"
+
+          if [ -z "$artifact_id" ]; then
+            echo "No non-expired state artifact found for $state_artifact_name." >&2
+            exit 1
+          fi
+
+          gh api "repos/${{ github.repository }}/actions/artifacts/$artifact_id/zip" > state.zip
+          unzip -o state.zip
+          rm -f state.zip
 
       - name: Terraform destroy
         if: inputs.action == 'destroy'
