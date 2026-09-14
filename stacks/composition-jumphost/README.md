@@ -128,9 +128,9 @@ make scan
 
 | Name | Source | Version |
 | ---- | ------ | ------- |
-| <a name="module_bastion_access"></a> [bastion\_access](#module\_bastion\_access) | git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-stack-bastion-access.git | v0.0.2 |
-| <a name="module_network"></a> [network](#module\_network) | git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-network.git | v0.1.2 |
-| <a name="module_vms"></a> [vms](#module\_vms) | git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-vms.git | v0.1.1 |
+| <a name="module_bastion_access"></a> [bastion\_access](#module\_bastion\_access) | ../composition-bastion-access | local |
+| <a name="module_network"></a> [network](#module\_network) | ../../modules/network | local |
+| <a name="module_vms"></a> [vms](#module\_vms) | ../../modules/vms | local |
 
 ## Resources
 

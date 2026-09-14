@@ -56,7 +56,7 @@ make scan
 
 | Name | Source | Version |
 | ---- | ------ | ------- |
-| <a name="module_network"></a> [network](#module\_network) | git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-network.git | v0.1.2 |
+| <a name="module_network"></a> [network](#module\_network) | ../../modules/network | local |
 
 ## Resources
 
