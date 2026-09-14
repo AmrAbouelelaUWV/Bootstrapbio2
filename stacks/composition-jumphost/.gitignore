@@ -3,6 +3,8 @@
 *.tfstate.*
 *.tfvars
 *.tfvars.json
+!environments/
+!environments/*.tfvars.json
 tfplan
 tfplan.json
 crash.log
