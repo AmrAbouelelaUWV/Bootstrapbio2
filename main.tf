@@ -42,7 +42,7 @@ resource "azurerm_resource_group" "this" {
 }
 
 module "network" {
-  source = "git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-network.git?ref=main"
+  source = "git::https://github.com/nluwv/AZLABS-cnc-azurerm-network.git?ref=main"
 
   name                = local.network_name
   resource_group_name = azurerm_resource_group.this.name
@@ -99,7 +99,7 @@ module "network" {
 }
 
 module "bastion_access" {
-  source = "git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-composition-bastion-access.git?ref=main"
+  source = "git::https://github.com/nluwv/AZLABS-cnc-azurerm-composition-bastion-access.git?ref=main"
 
   workload                                   = var.workload
   environment                                = var.environment
@@ -119,7 +119,7 @@ module "bastion_access" {
 }
 
 module "vms" {
-  source = "git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-vms.git?ref=main"
+  source = "git::https://github.com/nluwv/AZLABS-cnc-azurerm-vms.git?ref=main"
 
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location

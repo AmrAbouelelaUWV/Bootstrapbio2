@@ -38,7 +38,7 @@ variable "windows_admin_password" {
 }
 
 module "jumphost" {
-  source = "git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-composition-jumphost.git?ref=v0.0.2"
+  source = "git::https://github.com/nluwv/AZLABS-cnc-azurerm-composition-jumphost.git?ref=v0.0.2"
 
   workload    = "management"
   environment = "dev"
@@ -128,9 +128,9 @@ make scan
 
 | Name | Source | Version |
 | ---- | ------ | ------- |
-| <a name="module_bastion_access"></a> [bastion\_access](#module\_bastion\_access) | git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-composition-bastion-access.git | v0.0.2 |
-| <a name="module_network"></a> [network](#module\_network) | git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-network.git | v0.1.2 |
-| <a name="module_vms"></a> [vms](#module\_vms) | git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-vms.git | v0.1.1 |
+| <a name="module_bastion_access"></a> [bastion\_access](#module\_bastion\_access) | git::https://github.com/nluwv/AZLABS-cnc-azurerm-composition-bastion-access.git | v0.0.2 |
+| <a name="module_network"></a> [network](#module\_network) | git::https://github.com/nluwv/AZLABS-cnc-azurerm-network.git | v0.1.2 |
+| <a name="module_vms"></a> [vms](#module\_vms) | git::https://github.com/nluwv/AZLABS-cnc-azurerm-vms.git | v0.1.1 |
 
 ## Resources
 
