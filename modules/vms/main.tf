@@ -11,7 +11,7 @@ locals {
 
   windows_computer_names = {
     for name, vm in local.windows_vms :
-    name => substr(regexreplace(vm.name, "[^0-9A-Za-z-]", ""), 0, 15)
+    name => substr(replace(vm.name, "/[^0-9A-Za-z-]/", ""), 0, 15)
   }
 }
 
