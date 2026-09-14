@@ -28,25 +28,25 @@ jobs:
           chmod 600 ~/.ssh/network ~/.ssh/vms ~/.ssh/bastion_access
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           printf '%s\n' \
-            'Host github.com-jacquelinep777-network' \
+            'Host github.com-nluwv-network' \
             '  HostName github.com' \
             '  User git' \
             '  IdentityFile ~/.ssh/network' \
             '  IdentitiesOnly yes' \
-            'Host github.com-jacquelinep777-vms' \
+            'Host github.com-nluwv-vms' \
             '  HostName github.com' \
             '  User git' \
             '  IdentityFile ~/.ssh/vms' \
             '  IdentitiesOnly yes' \
-            'Host github.com-jacquelinep777-bastion-access' \
+            'Host github.com-nluwv-bastion-access' \
             '  HostName github.com' \
             '  User git' \
             '  IdentityFile ~/.ssh/bastion_access' \
             '  IdentitiesOnly yes' \
             >> ~/.ssh/config
-          git config --global url."ssh://git@github.com-jacquelinep777-network/jacquelinep777/xx-azurerm-network.git".insteadOf "ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-network.git"
-          git config --global url."ssh://git@github.com-jacquelinep777-vms/jacquelinep777/xx-azurerm-vms.git".insteadOf "ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-vms.git"
-          git config --global url."ssh://git@github.com-jacquelinep777-bastion-access/jacquelinep777/xx-azurerm-stack-bastion-access.git".insteadOf "ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-stack-bastion-access.git"
+          git config --global url."ssh://git@github.com-nluwv-network/nluwv/AZLABS-cnc-azurerm-network.git".insteadOf "ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-network.git"
+          git config --global url."ssh://git@github.com-nluwv-vms/nluwv/AZLABS-cnc-azurerm-vms.git".insteadOf "ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-vms.git"
+          git config --global url."ssh://git@github.com-nluwv-bastion-access/nluwv/AZLABS-cnc-azurerm-composition-bastion-access.git".insteadOf "ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-composition-bastion-access.git"
 
       - name: Format
         run: terraform fmt -check -recursive

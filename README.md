@@ -38,7 +38,7 @@ variable "windows_admin_password" {
 }
 
 module "jumphost" {
-  source = "git::ssh://git@github.com/jacquelinep777/xx-azurerm-stack-jumphost.git?ref=v0.0.2"
+  source = "git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-composition-jumphost.git?ref=v0.0.2"
 
   workload    = "management"
   environment = "dev"
@@ -97,9 +97,9 @@ and omit the corresponding `source_image_reference`.
 
 This repo pins private module sources by exact git tag:
 
-- `xx-azurerm-network.git?ref=v0.0.2`
-- `xx-azurerm-stack-bastion-access.git?ref=v0.0.1`
-- `xx-azurerm-vms.git?ref=v0.0.1`
+- `AZLABS-cnc-azurerm-network.git?ref=v0.1.2`
+- `AZLABS-cnc-azurerm-composition-bastion-access.git?ref=v0.0.2`
+- `AZLABS-cnc-azurerm-vms.git?ref=v0.1.1`
 
 ```bash
 make fmt
@@ -128,9 +128,9 @@ make scan
 
 | Name | Source | Version |
 | ---- | ------ | ------- |
-| <a name="module_bastion_access"></a> [bastion\_access](#module\_bastion\_access) | git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-stack-bastion-access.git | v0.0.2 |
-| <a name="module_network"></a> [network](#module\_network) | git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-network.git | v0.1.2 |
-| <a name="module_vms"></a> [vms](#module\_vms) | git::ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-vms.git | v0.1.1 |
+| <a name="module_bastion_access"></a> [bastion\_access](#module\_bastion\_access) | git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-composition-bastion-access.git | v0.0.2 |
+| <a name="module_network"></a> [network](#module\_network) | git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-network.git | v0.1.2 |
+| <a name="module_vms"></a> [vms](#module\_vms) | git::ssh://git@github.com/nluwv/AZLABS-cnc-azurerm-vms.git | v0.1.1 |
 
 ## Resources
 
