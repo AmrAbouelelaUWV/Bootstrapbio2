@@ -15,6 +15,7 @@ variable "vms" {
     nic_name             = string
     os_type              = string
     subnet_id            = string
+    encryption_at_host_enabled = optional(bool, false)
     size                 = optional(string, "Standard_B2s")
     admin_username       = optional(string, "azureadmin")
     admin_ssh_public_key = optional(string)

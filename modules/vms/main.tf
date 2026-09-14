@@ -39,7 +39,7 @@ resource "azurerm_linux_virtual_machine" "this" {
   size                            = each.value.size
   admin_username                  = each.value.admin_username
   network_interface_ids           = [azurerm_network_interface.this[each.key].id]
-  encryption_at_host_enabled      = true
+  encryption_at_host_enabled      = each.value.encryption_at_host_enabled
   disable_password_authentication = true
   source_image_id                 = each.value.source_image_id
   tags                            = local.tags
@@ -86,7 +86,7 @@ resource "azurerm_windows_virtual_machine" "this" {
   admin_username             = each.value.admin_username
   admin_password             = lookup(var.admin_passwords, each.key, null)
   network_interface_ids      = [azurerm_network_interface.this[each.key].id]
-  encryption_at_host_enabled = true
+  encryption_at_host_enabled = each.value.encryption_at_host_enabled
   source_image_id            = each.value.source_image_id
   tags                       = local.tags
 
