@@ -78,7 +78,7 @@ on:
       enable_linux_vm:
         description: Deploy Linux management VM
         required: true
-        default: true
+        default: false
         type: boolean
       enable_windows_vm:
         description: Deploy Windows management VM
@@ -101,6 +101,8 @@ jobs:
     env:
       TF_IN_AUTOMATION: true
       ARM_USE_AZUREAD: true
+      LINUX_ADMIN_SSH_PUBLIC_KEY_SECRET: ${{ secrets.JUMPHOST_LINUX_ADMIN_SSH_PUBLIC_KEY }}
+      WINDOWS_ADMIN_PASSWORD_SECRET: ${{ secrets.JUMPHOST_WINDOWS_ADMIN_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -183,17 +185,36 @@ jobs:
         run: terraform validate
 
       - name: Validate VM credential inputs
+        id: vm_creds
         shell: bash
         run: |
-          if [ "${{ inputs.enable_linux_vm }}" = "true" ] && [ -z "${{ inputs.linux_admin_ssh_public_key }}" ]; then
-            echo "linux_admin_ssh_public_key is required when enable_linux_vm=true." >&2
+          linux_key='${{ inputs.linux_admin_ssh_public_key }}'
+          if [ -z "$linux_key" ]; then
+            linux_key="$LINUX_ADMIN_SSH_PUBLIC_KEY_SECRET"
+          fi
+
+          windows_password='${{ inputs.windows_admin_password }}'
+          if [ -z "$windows_password" ]; then
+            windows_password="$WINDOWS_ADMIN_PASSWORD_SECRET"
+          fi
+
+          if [ "${{ inputs.enable_linux_vm }}" = "true" ] && [ -z "$linux_key" ]; then
+            echo "Provide linux_admin_ssh_public_key input or set JUMPHOST_LINUX_ADMIN_SSH_PUBLIC_KEY secret when enable_linux_vm=true." >&2
             exit 1
           fi
 
-          if [ "${{ inputs.enable_windows_vm }}" = "true" ] && [ -z "${{ inputs.windows_admin_password }}" ] && [ "${{ inputs.admin_passwords_json }}" = "{}" ]; then
-            echo "Provide windows_admin_password or admin_passwords_json when enable_windows_vm=true." >&2
+          if [ "${{ inputs.enable_windows_vm }}" = "true" ] && [ -z "$windows_password" ] && [ "${{ inputs.admin_passwords_json }}" = "{}" ]; then
+            echo "Provide windows_admin_password input, admin_passwords_json, or set JUMPHOST_WINDOWS_ADMIN_PASSWORD secret when enable_windows_vm=true." >&2
             exit 1
           fi
+
+          echo "linux_key<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$linux_key" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          echo "windows_password<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$windows_password" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Build runtime tfvars
         shell: bash
@@ -224,8 +245,8 @@ jobs:
           fi
 
           effective_admin_passwords='${{ inputs.admin_passwords_json }}'
-          if [ -n "${{ inputs.windows_admin_password }}" ]; then
-            effective_admin_passwords="$(jq -cn --argjson base '${{ inputs.admin_passwords_json }}' --arg pwd '${{ inputs.windows_admin_password }}' '$base + {windows: $pwd}')"
+          if [ -n "${{ steps.vm_creds.outputs.windows_password }}" ]; then
+            effective_admin_passwords="$(jq -cn --argjson base '${{ inputs.admin_passwords_json }}' --arg pwd '${{ steps.vm_creds.outputs.windows_password }}' '$base + {windows: $pwd}')"
           fi
 
           jq -n \
@@ -237,7 +258,7 @@ jobs:
             --arg biv "${{ inputs.biv }}" \
             --arg management_subnet_prefix "${{ inputs.management_subnet_prefix }}" \
             --arg bastion_subnet_prefix "${{ inputs.bastion_subnet_prefix }}" \
-            --arg linux_admin_ssh_public_key "${{ inputs.linux_admin_ssh_public_key }}" \
+            --arg linux_admin_ssh_public_key "${{ steps.vm_creds.outputs.linux_key }}" \
             --argjson address_space '${{ inputs.address_space_json }}' \
             --argjson bastion_address_space '${{ inputs.bastion_address_space_json }}' \
             --argjson admin_login_principal_ids '${{ inputs.admin_login_principal_ids_json }}' \
