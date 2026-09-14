@@ -10,27 +10,22 @@ on:
         type: choice
         options:
           - deploy
+          - test
           - destroy
       github_environment:
         description: GitHub Environment containing Azure secrets/variables
         required: true
         default: Development
-      workload:
-        description: Workload name
+      terraform_environment:
+        description: Terraform environment (selects environments/<env>.tfvars.json)
         required: true
-        default: management
-      environment:
-        description: Terraform environment
-        required: true
-        default: dev
-      location:
-        description: Azure region name
-        required: true
-        default: westeurope
-      region_code:
-        description: Short region code
-        required: true
-        default: we
+        type: choice
+        default: t
+        options:
+          - o
+          - t
+          - a
+          - p
       instance:
         description: Resource instance number
         required: true
@@ -39,34 +34,6 @@ on:
         description: BIV tag value
         required: true
         default: "233"
-      address_space_json:
-        description: JSON list for VNet address space
-        required: true
-        default: '["10.10.0.0/16"]'
-      management_subnet_prefix:
-        description: Management subnet CIDR
-        required: true
-        default: 10.10.1.0/24
-      bastion_address_space_json:
-        description: JSON list for Bastion VNet address space
-        required: true
-        default: '["10.90.0.0/24"]'
-      bastion_subnet_prefix:
-        description: AzureBastionSubnet CIDR
-        required: true
-        default: 10.90.0.0/26
-      admin_login_principal_ids_json:
-        description: JSON map of VM admin login principal IDs
-        required: false
-        default: '{}'
-      user_login_principal_ids_json:
-        description: JSON map of VM user login principal IDs
-        required: false
-        default: '{}'
-      admin_passwords_json:
-        description: JSON map of Windows admin passwords
-        required: false
-        default: '{}'
       linux_admin_ssh_public_key:
         description: SSH public key for Linux VM (required when enable_linux_vm is true)
         required: false
@@ -75,16 +42,6 @@ on:
         description: Windows admin password for logical VM key windows (optional, merged into admin_passwords)
         required: false
         default: ""
-      enable_linux_vm:
-        description: Deploy Linux management VM
-        required: true
-        default: false
-        type: boolean
-      enable_windows_vm:
-        description: Deploy Windows management VM
-        required: true
-        default: true
-        type: boolean
 
 permissions:
   contents: read
@@ -158,7 +115,7 @@ jobs:
         id: state
         shell: bash
         run: |
-          echo "name=jumphost-state-${{ inputs.workload }}-${{ inputs.environment }}-${{ inputs.region_code }}-${{ inputs.instance }}" >> "$GITHUB_OUTPUT"
+          echo "name=jumphost-state-${{ inputs.terraform_environment }}-${{ inputs.instance }}" >> "$GITHUB_OUTPUT"
 
       - name: Download Terraform state artifact
         if: inputs.action == 'destroy'
@@ -188,6 +145,15 @@ jobs:
         id: vm_creds
         shell: bash
         run: |
+          tfvars_file="environments/${{ inputs.terraform_environment }}.tfvars.json"
+          if [ ! -f "$tfvars_file" ]; then
+            echo "Expected tfvars file not found: $tfvars_file" >&2
+            exit 1
+          fi
+
+          linux_enabled="$(jq -r '.enable_linux_vm // false' "$tfvars_file")"
+          windows_enabled="$(jq -r '.enable_windows_vm // false' "$tfvars_file")"
+
           linux_key='${{ inputs.linux_admin_ssh_public_key }}'
           if [ -z "$linux_key" ]; then
             linux_key="$LINUX_ADMIN_SSH_PUBLIC_KEY_SECRET"
@@ -198,15 +164,21 @@ jobs:
             windows_password="$WINDOWS_ADMIN_PASSWORD_SECRET"
           fi
 
-          if [ "${{ inputs.enable_linux_vm }}" = "true" ] && [ -z "$linux_key" ]; then
+          windows_password_from_file="$(jq -r '.admin_passwords.windows // ""' "$tfvars_file")"
+
+          if [ "$linux_enabled" = "true" ] && [ -z "$linux_key" ]; then
             echo "Provide linux_admin_ssh_public_key input or set JUMPHOST_LINUX_ADMIN_SSH_PUBLIC_KEY secret when enable_linux_vm=true." >&2
             exit 1
           fi
 
-          if [ "${{ inputs.enable_windows_vm }}" = "true" ] && [ -z "$windows_password" ] && [ "${{ inputs.admin_passwords_json }}" = "{}" ]; then
-            echo "Provide windows_admin_password input, admin_passwords_json, or set JUMPHOST_WINDOWS_ADMIN_PASSWORD secret when enable_windows_vm=true." >&2
+          if [ "$windows_enabled" = "true" ] && [ -z "$windows_password" ] && [ -z "$windows_password_from_file" ]; then
+            echo "Provide windows_admin_password input or set JUMPHOST_WINDOWS_ADMIN_PASSWORD secret when enable_windows_vm=true." >&2
             exit 1
           fi
+
+          echo "tfvars_file=$tfvars_file" >> "$GITHUB_OUTPUT"
+          echo "linux_enabled=$linux_enabled" >> "$GITHUB_OUTPUT"
+          echo "windows_enabled=$windows_enabled" >> "$GITHUB_OUTPUT"
 
           echo "linux_key<<EOF" >> "$GITHUB_OUTPUT"
           echo "$linux_key" >> "$GITHUB_OUTPUT"
@@ -219,75 +191,33 @@ jobs:
       - name: Build runtime tfvars
         shell: bash
         run: |
-          if ! echo '${{ inputs.address_space_json }}' | jq -e type >/dev/null 2>&1; then
-            echo "address_space_json must be valid JSON." >&2
-            exit 1
-          fi
-
-          if ! echo '${{ inputs.bastion_address_space_json }}' | jq -e type >/dev/null 2>&1; then
-            echo "bastion_address_space_json must be valid JSON." >&2
-            exit 1
-          fi
-
-          if ! echo '${{ inputs.admin_login_principal_ids_json }}' | jq -e 'type == "object"' >/dev/null 2>&1; then
-            echo "admin_login_principal_ids_json must be a JSON object." >&2
-            exit 1
-          fi
-
-          if ! echo '${{ inputs.user_login_principal_ids_json }}' | jq -e 'type == "object"' >/dev/null 2>&1; then
-            echo "user_login_principal_ids_json must be a JSON object." >&2
-            exit 1
-          fi
-
-          if ! echo '${{ inputs.admin_passwords_json }}' | jq -e 'type == "object"' >/dev/null 2>&1; then
-            echo "admin_passwords_json must be a JSON object." >&2
-            exit 1
-          fi
-
-          effective_admin_passwords='${{ inputs.admin_passwords_json }}'
+          tfvars_file="${{ steps.vm_creds.outputs.tfvars_file }}"
+          effective_admin_passwords="$(jq -c '.admin_passwords // {}' "$tfvars_file")"
           if [ -n "${{ steps.vm_creds.outputs.windows_password }}" ]; then
-            effective_admin_passwords="$(jq -cn --argjson base '${{ inputs.admin_passwords_json }}' --arg pwd '${{ steps.vm_creds.outputs.windows_password }}' '$base + {windows: $pwd}')"
+            effective_admin_passwords="$(jq -cn --argjson base "$effective_admin_passwords" --arg pwd '${{ steps.vm_creds.outputs.windows_password }}' '$base + {windows: $pwd}')"
           fi
 
           jq -n \
-            --arg workload "${{ inputs.workload }}" \
-            --arg environment "${{ inputs.environment }}" \
-            --arg location "${{ inputs.location }}" \
-            --arg region_code "${{ inputs.region_code }}" \
+            --arg environment "${{ inputs.terraform_environment }}" \
             --arg instance "${{ inputs.instance }}" \
             --arg biv "${{ inputs.biv }}" \
-            --arg management_subnet_prefix "${{ inputs.management_subnet_prefix }}" \
-            --arg bastion_subnet_prefix "${{ inputs.bastion_subnet_prefix }}" \
             --arg linux_admin_ssh_public_key "${{ steps.vm_creds.outputs.linux_key }}" \
-            --argjson address_space '${{ inputs.address_space_json }}' \
-            --argjson bastion_address_space '${{ inputs.bastion_address_space_json }}' \
-            --argjson admin_login_principal_ids '${{ inputs.admin_login_principal_ids_json }}' \
-            --argjson user_login_principal_ids '${{ inputs.user_login_principal_ids_json }}' \
             --argjson admin_passwords "$effective_admin_passwords" \
-            --argjson enable_linux_vm ${{ inputs.enable_linux_vm }} \
-            --argjson enable_windows_vm ${{ inputs.enable_windows_vm }} \
             '{
-              workload: $workload,
               environment: $environment,
-              location: $location,
-              region_code: $region_code,
               instance: $instance,
               biv: $biv,
-              address_space: $address_space,
-              management_subnet_prefix: $management_subnet_prefix,
-              bastion_address_space: $bastion_address_space,
-              bastion_subnet_prefix: $bastion_subnet_prefix,
-              admin_login_principal_ids: $admin_login_principal_ids,
-              user_login_principal_ids: $user_login_principal_ids,
               admin_passwords: $admin_passwords,
-              enable_linux_vm: $enable_linux_vm,
-              enable_windows_vm: $enable_windows_vm,
               linux_vm: (if ($linux_admin_ssh_public_key | length) > 0 then { admin_ssh_public_key: $linux_admin_ssh_public_key } else {} end)
             }' > runtime.auto.tfvars.json
 
+      - name: Terraform test
+        if: inputs.action == 'test'
+        run: terraform test -var-file="${{ steps.vm_creds.outputs.tfvars_file }}" -var-file=runtime.auto.tfvars.json
+
       - name: Terraform plan
         if: inputs.action == 'deploy'
-        run: terraform plan -input=false -out=tfplan
+        run: terraform plan -input=false -out=tfplan -var-file="${{ steps.vm_creds.outputs.tfvars_file }}" -var-file=runtime.auto.tfvars.json
 
       - name: Terraform apply
         if: inputs.action == 'deploy'
@@ -304,4 +234,4 @@ jobs:
 
       - name: Terraform destroy
         if: inputs.action == 'destroy'
-        run: terraform destroy -input=false -auto-approve
+        run: terraform destroy -input=false -auto-approve -var-file="${{ steps.vm_creds.outputs.tfvars_file }}" -var-file=runtime.auto.tfvars.json
