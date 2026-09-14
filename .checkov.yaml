@@ -1,0 +1,3 @@
+skip-check:
+  - CKV_TF_1 # Company standard requires exact immutable release tags for private Terraform building blocks.
+  - CKV_AZURE_50 # Entra login VM extensions are required for AAD-based jumphost access.
