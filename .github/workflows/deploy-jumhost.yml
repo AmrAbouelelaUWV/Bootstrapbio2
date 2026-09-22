@@ -132,6 +132,7 @@ jobs:
         run: terraform validate
 
       - name: Validate VM credential inputs
+        if: inputs.action != 'test'
         id: vm_creds
         shell: bash
         run: |
@@ -205,6 +206,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Resolve instance and state artifact name
+        if: inputs.action != 'test'
         id: state
         shell: bash
         run: |
@@ -259,6 +261,7 @@ jobs:
           fi
 
       - name: Build runtime tfvars
+        if: inputs.action != 'test'
         shell: bash
         run: |
           tfvars_file="${{ steps.vm_creds.outputs.tfvars_file }}"
@@ -283,7 +286,7 @@ jobs:
 
       - name: Terraform test
         if: inputs.action == 'test'
-        run: terraform test -var-file="${{ steps.vm_creds.outputs.tfvars_file }}" -var-file=runtime.auto.tfvars.json
+        run: terraform test
 
       - name: Terraform plan
         if: inputs.action == 'deploy'
