@@ -76,6 +76,7 @@ jobs:
           GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           git config --global url."https://x-access-token:${GH_APP_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${GH_APP_TOKEN}@github.com/nluwv/AZLABS-cnc-azurerm-network.git".insteadOf "ssh://git@github.com-jacquelinep777/jacquelinep777/xx-azurerm-network.git"
 
       - uses: hashicorp/setup-terraform@v3
         with:
