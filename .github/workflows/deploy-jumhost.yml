@@ -147,29 +147,6 @@ jobs:
               ;;
           esac
 
-          tfvars_file="environments/${environment_code}.tfvars.json"
-          if [ ! -f "$tfvars_file" ]; then
-            echo "No tfvars file found at $tfvars_file. Generating workflow fallback tfvars." >&2
-            jq -n \
-              --arg environment "$environment_code" \
-              '{
-                workload: "management",
-                environment: $environment,
-                location: "westeurope",
-                region_code: "we",
-                address_space: ["10.10.0.0/16"],
-                management_subnet_prefix: "10.10.1.0/24",
-                bastion_address_space: ["10.90.0.0/24"],
-                bastion_subnet_prefix: "10.90.0.0/26",
-                enable_linux_vm: true,
-                enable_windows_vm: true
-              }' > generated.tfvars.json
-            tfvars_file="generated.tfvars.json"
-          fi
-
-          linux_enabled="$(jq -r '.enable_linux_vm // false' "$tfvars_file")"
-          windows_enabled="$(jq -r '.enable_windows_vm // false' "$tfvars_file")"
-
           linux_key='${{ inputs.linux_admin_ssh_public_key }}'
           if [ -z "$linux_key" ]; then
             linux_key="$LINUX_ADMIN_SSH_PUBLIC_KEY_SECRET"
@@ -179,6 +156,47 @@ jobs:
           if [ -z "$windows_password" ]; then
             windows_password="$WINDOWS_ADMIN_PASSWORD_SECRET"
           fi
+
+          tfvars_file="environments/${environment_code}.tfvars.json"
+          if [ ! -f "$tfvars_file" ]; then
+            echo "No tfvars file found at $tfvars_file. Generating workflow fallback tfvars." >&2
+
+            linux_enabled=false
+            if [ -n "$linux_key" ]; then
+              linux_enabled=true
+            fi
+
+            windows_enabled=false
+            if [ -n "$windows_password" ]; then
+              windows_enabled=true
+            fi
+
+            if [ "$linux_enabled" = "false" ] && [ "$windows_enabled" = "false" ]; then
+              echo "No environment tfvars found and no VM credentials supplied. Provide at least one VM credential or add $tfvars_file." >&2
+              exit 1
+            fi
+
+            jq -n \
+              --arg environment "$environment_code" \
+              --argjson enable_linux_vm "$linux_enabled" \
+              --argjson enable_windows_vm "$windows_enabled" \
+              '{
+                workload: "management",
+                environment: $environment,
+                location: "westeurope",
+                region_code: "we",
+                address_space: ["10.10.0.0/16"],
+                management_subnet_prefix: "10.10.1.0/24",
+                bastion_address_space: ["10.90.0.0/24"],
+                bastion_subnet_prefix: "10.90.0.0/26",
+                enable_linux_vm: $enable_linux_vm,
+                enable_windows_vm: $enable_windows_vm
+              }' > generated.tfvars.json
+            tfvars_file="generated.tfvars.json"
+          fi
+
+          linux_enabled="$(jq -r '.enable_linux_vm // false' "$tfvars_file")"
+          windows_enabled="$(jq -r '.enable_windows_vm // false' "$tfvars_file")"
 
           windows_password_from_file="$(jq -r '.admin_passwords.windows // ""' "$tfvars_file")"
 
