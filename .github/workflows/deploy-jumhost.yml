@@ -58,7 +58,24 @@ jobs:
       LINUX_ADMIN_SSH_PUBLIC_KEY_SECRET: ${{ secrets.JUMPHOST_LINUX_ADMIN_SSH_PUBLIC_KEY }}
       WINDOWS_ADMIN_PASSWORD_SECRET: ${{ secrets.JUMPHOST_WINDOWS_ADMIN_PASSWORD }}
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID_INTERNAL }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY_INTERNAL }}
+          owner: nluwv
+
       - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure private module access
+        shell: bash
+        env:
+          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_APP_TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -289,7 +306,7 @@ jobs:
         if: inputs.action == 'destroy'
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           state_artifact_name="${{ steps.state.outputs.name }}"
           artifact_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$state_artifact_name\" and .expired == false) | .id" | head -n 1)"
