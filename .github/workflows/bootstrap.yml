@@ -1,0 +1,271 @@
+name: bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to run
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - test
+          - destroy
+      github_environment:
+        description: GitHub Environment containing Azure secrets/variables
+        required: true
+        default: Development
+      workload:
+        description: Short bootstrap workload name
+        required: true
+        default: tfstate
+      environment:
+        description: Short naming code used by the module
+        required: true
+        default: dev
+      location:
+        description: Azure region name
+        required: true
+        default: westeurope
+      region_code:
+        description: Short region code used by the module
+        required: true
+        default: we
+      instance:
+        description: Resource instance number
+        required: true
+        default: "01"
+      biv:
+        description: BIV tag value
+        required: true
+        default: "233"
+      github_owner:
+        description: GitHub owner used for the federated credential subject
+        required: true
+        default: xx
+      github_repository:
+        description: GitHub repository used for the federated credential subject
+        required: true
+        default: platform-workloads
+      storage_account_unique_suffix:
+        description: Optional storage account suffix
+        required: false
+        default: ""
+      key_vault_unique_suffix:
+        description: Optional Key Vault suffix
+        required: false
+        default: ""
+      assign_subscription_contributor:
+        description: Assign Contributor at subscription scope instead of resource-group scope
+        required: false
+        type: boolean
+        default: false
+      create_role_assignments:
+        description: Create Azure role assignments
+        required: false
+        type: boolean
+        default: true
+      replication_type:
+        description: Storage replication type
+        required: false
+        type: choice
+        default: GRS
+        options:
+          - LRS
+          - ZRS
+          - GRS
+          - GZRS
+      subscription_id:
+        description: Optional target subscription ID passed into the module
+        required: false
+        default: ""
+      tenant_id:
+        description: Optional tenant ID passed into the module
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+
+    env:
+      TF_IN_AUTOMATION: true
+      ARM_USE_AZUREAD: true
+      AZURE_CLIENT_ID_VAR: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID_VAR: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID_VAR: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_CLIENT_ID_SECRET: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID_SECRET: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID_SECRET: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_CREDENTIALS_SECRET: ${{ secrets.AZURE_CREDENTIALS }}
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID_INTERNAL }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY_INTERNAL }}
+          owner: ${{ github.repository_owner }}
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure private module access
+        shell: bash
+        env:
+          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_APP_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Determine Azure auth mode
+        id: auth_mode
+        shell: bash
+        run: |
+          if [ -n "${AZURE_CLIENT_ID_VAR}" ] && [ -n "${AZURE_TENANT_ID_VAR}" ] && [ -n "${AZURE_SUBSCRIPTION_ID_VAR}" ]; then
+            echo "mode=oidc_vars" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "${AZURE_CLIENT_ID_SECRET}" ] && [ -n "${AZURE_TENANT_ID_SECRET}" ] && [ -n "${AZURE_SUBSCRIPTION_ID_SECRET}" ]; then
+            echo "mode=oidc_secrets" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "${AZURE_CREDENTIALS_SECRET}" ]; then
+            echo "mode=spn_secret" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "No valid Azure auth configuration found." >&2
+          exit 1
+
+      - name: Azure login (OIDC via vars)
+        if: steps.auth_mode.outputs.mode == 'oidc_vars'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Azure login (OIDC via secrets)
+        if: steps.auth_mode.outputs.mode == 'oidc_secrets'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Azure login (service principal secret)
+        if: steps.auth_mode.outputs.mode == 'spn_secret'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Build runtime tfvars
+        if: inputs.action != 'test'
+        shell: bash
+        run: |
+          jq -n \
+            --arg workload "${{ inputs.workload }}" \
+            --arg environment "${{ inputs.environment }}" \
+            --arg location "${{ inputs.location }}" \
+            --arg region_code "${{ inputs.region_code }}" \
+            --arg instance "${{ inputs.instance }}" \
+            --arg biv "${{ inputs.biv }}" \
+            --arg github_owner "${{ inputs.github_owner }}" \
+            --arg github_repository "${{ inputs.github_repository }}" \
+            --arg storage_account_unique_suffix "${{ inputs.storage_account_unique_suffix }}" \
+            --arg key_vault_unique_suffix "${{ inputs.key_vault_unique_suffix }}" \
+            --arg replication_type "${{ inputs.replication_type }}" \
+            --arg subscription_id "${{ inputs.subscription_id }}" \
+            --arg tenant_id "${{ inputs.tenant_id }}" \
+            --argjson assign_subscription_contributor ${{ inputs.assign_subscription_contributor }} \
+            --argjson create_role_assignments ${{ inputs.create_role_assignments }} \
+            '{
+              workload: $workload,
+              environment: $environment,
+              location: $location,
+              region_code: $region_code,
+              instance: $instance,
+              biv: $biv,
+              github_owner: $github_owner,
+              github_repository: $github_repository,
+              storage_account_unique_suffix: $storage_account_unique_suffix,
+              key_vault_unique_suffix: $key_vault_unique_suffix,
+              replication_type: $replication_type,
+              assign_subscription_contributor: $assign_subscription_contributor,
+              create_role_assignments: $create_role_assignments,
+              subscription_id: (if $subscription_id == "" then null else $subscription_id end),
+              tenant_id: (if $tenant_id == "" then null else $tenant_id end)
+            }' > runtime.auto.tfvars.json
+
+      - name: Resolve state artifact name
+        if: inputs.action != 'test'
+        id: state
+        shell: bash
+        run: |
+          state_name="bootstrap-state-${{ inputs.environment }}-${{ inputs.instance }}"
+          echo "name=$state_name" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform test
+        if: inputs.action == 'test'
+        run: terraform test
+
+      - name: Terraform plan
+        if: inputs.action == 'deploy'
+        run: terraform plan -input=false -out=tfplan -var-file=runtime.auto.tfvars.json
+
+      - name: Terraform apply
+        if: inputs.action == 'deploy'
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Upload Terraform state artifact
+        if: inputs.action == 'deploy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.name }}
+          path: terraform.tfstate
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Download Terraform state artifact
+        if: inputs.action == 'destroy'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          state_artifact_name="${{ steps.state.outputs.name }}"
+
+          artifact_id="$(gh api --paginate "repos/${{ github.repository }}/actions/artifacts" --jq ".artifacts[] | select(.name == \"$state_artifact_name\" and .expired == false) | .id" | head -n 1)"
+
+          if [ -z "$artifact_id" ]; then
+            echo "No non-expired state artifact found for $state_artifact_name." >&2
+            exit 1
+          fi
+
+          gh api "repos/${{ github.repository }}/actions/artifacts/$artifact_id/zip" > state.zip
+          unzip -o state.zip
+          rm -f state.zip
+
+      - name: Terraform destroy
+        if: inputs.action == 'destroy'
+        run: terraform destroy -input=false -auto-approve -var-file=runtime.auto.tfvars.json
