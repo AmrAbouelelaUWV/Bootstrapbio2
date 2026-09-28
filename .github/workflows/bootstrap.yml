@@ -33,9 +33,9 @@ on:
         required: true
         default: we
       instance:
-        description: Resource instance number
+        description: Resource instance number; choose a unique value per bootstrap deployment
         required: true
-        default: "01"
+        default: "99"
       biv:
         description: BIV tag value
         required: true
