@@ -251,7 +251,7 @@ jobs:
         if: inputs.action == 'destroy'
         shell: bash
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           state_artifact_name="${{ steps.state.outputs.name }}"
 
