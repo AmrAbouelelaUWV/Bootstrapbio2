@@ -1,0 +1,134 @@
+name: Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      location:
+        description: Azure region for the bootstrap resources
+        required: false
+        default: westeurope
+        type: string
+      resourceGroupName:
+        description: Resource group for the Terraform backend
+        required: false
+        default: tfstate-rg
+        type: string
+      storageAccountName:
+        description: Storage account for Terraform state
+        required: false
+        default: sttfstate001
+        type: string
+      containerName:
+        description: Blob container for Terraform state
+        required: false
+        default: tfstate
+        type: string
+      stateKey:
+        description: Blob key for Terraform state
+        required: false
+        default: bootstrap.tfstate
+        type: string
+
+jobs:
+  bootstrap:
+    name: Seed backend, import resources, and apply
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    env:
+      LOCATION: ${{ inputs.location }}
+      RESOURCE_GROUP_NAME: ${{ inputs.resourceGroupName }}
+      STORAGE_ACCOUNT_NAME: ${{ inputs.storageAccountName }}
+      CONTAINER_NAME: ${{ inputs.containerName }}
+      STATE_KEY: ${{ inputs.stateKey }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy Bicep bootstrap
+        run: |
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+
+          deployment_name="bootstrap-${GITHUB_RUN_ID}"
+
+          az deployment sub create \
+            --name "$deployment_name" \
+            --location "$LOCATION" \
+            --template-file "bootstrap.bicep" \
+            --parameters resourceGroupName="$RESOURCE_GROUP_NAME" \
+                         storageAccountName="$STORAGE_ACCOUNT_NAME" \
+                         containerName="$CONTAINER_NAME" \
+                         stateKey="$STATE_KEY"
+
+          resource_group_name=$(az deployment sub show \
+            --name "$deployment_name" \
+            --query properties.outputs.resourceGroupName.value \
+            -o tsv)
+
+          storage_account_name=$(az deployment sub show \
+            --name "$deployment_name" \
+            --query properties.outputs.storageAccountName.value \
+            -o tsv)
+
+          container_name=$(az deployment sub show \
+            --name "$deployment_name" \
+            --query properties.outputs.containerName.value \
+            -o tsv)
+
+          state_key=$(az deployment sub show \
+            --name "$deployment_name" \
+            --query properties.outputs.stateKey.value \
+            -o tsv)
+
+          echo "resource_group_name=$resource_group_name" >> "$GITHUB_ENV"
+          echo "storage_account_name=$storage_account_name" >> "$GITHUB_ENV"
+          echo "container_name=$container_name" >> "$GITHUB_ENV"
+          echo "state_key=$state_key" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Initialize Terraform backend
+        run: |
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+
+          terraform init -reconfigure -input=false \
+            -backend-config="resource_group_name=$resource_group_name" \
+            -backend-config="storage_account_name=$storage_account_name" \
+            -backend-config="container_name=$container_name" \
+            -backend-config="key=$state_key"
+        shell: bash
+
+      - name: Import Bicep-created resources
+        run: |
+          set -euo pipefail
+
+          subscription_id=$(az account show --query id -o tsv)
+
+          cd "$GITHUB_WORKSPACE"
+
+          terraform import -input=false azurerm_resource_group.tfstate "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}"
+          terraform import -input=false azurerm_storage_account.tfstate "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Storage/storageAccounts/${storage_account_name}"
+          terraform import -input=false azurerm_storage_container.tfstate "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Storage/storageAccounts/${storage_account_name}/blobServices/default/containers/${container_name}"
+        shell: bash
+
+      - name: Apply Terraform bootstrap
+        run: |
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+          terraform apply -auto-approve -input=false
+        shell: bash
