@@ -33,8 +33,10 @@ jobs:
   bootstrap:
     name: Seed backend, import resources, and apply
     runs-on: ubuntu-latest
+    environment: Development
 
     permissions:
+      id-token: write
       contents: read
 
     env:
@@ -51,7 +53,9 @@ jobs:
       - name: Azure login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Bicep bootstrap
         run: |
