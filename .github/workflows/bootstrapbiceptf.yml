@@ -130,6 +130,10 @@ jobs:
           echo "storage_account_name=$storage_account_name" >> "$GITHUB_ENV"
           echo "container_name=$container_name" >> "$GITHUB_ENV"
           echo "state_key=$state_key" >> "$GITHUB_ENV"
+          echo "TF_VAR_resource_group_name=$resource_group_name" >> "$GITHUB_ENV"
+          echo "TF_VAR_storage_account_name=$storage_account_name" >> "$GITHUB_ENV"
+          echo "TF_VAR_container_name=$container_name" >> "$GITHUB_ENV"
+          echo "TF_VAR_tags={}" >> "$GITHUB_ENV"
         shell: bash
 
       - name: Setup Terraform
