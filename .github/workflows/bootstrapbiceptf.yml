@@ -11,12 +11,12 @@ on:
       resourceGroupName:
         description: Resource group for the Terraform backend
         required: false
-        default: tfstate-rg
+        default: ''
         type: string
-      storageAccountName:
-        description: Storage account for Terraform state
+      storageAccountPrefix:
+        description: Storage account prefix for Terraform state
         required: false
-        default: sttfstate001
+        default: ''
         type: string
       containerName:
         description: Blob container for Terraform state
@@ -42,7 +42,10 @@ jobs:
     env:
       LOCATION: ${{ inputs.location }}
       RESOURCE_GROUP_NAME: ${{ inputs.resourceGroupName }}
-      STORAGE_ACCOUNT_NAME: ${{ inputs.storageAccountName }}
+      RESOURCE_GROUP_NAME_SECRET: ${{ secrets.STATE_RG_NAME }}
+      STORAGE_ACCOUNT_PREFIX: ${{ inputs.storageAccountPrefix }}
+      STORAGE_ACCOUNT_PREFIX_SECRET: ${{ secrets.STATE_SA_PREFIX }}
+      LOCATION_SECRET: ${{ secrets.STATE_LOCATION }}
       CONTAINER_NAME: ${{ inputs.containerName }}
       STATE_KEY: ${{ inputs.stateKey }}
 
@@ -63,14 +66,43 @@ jobs:
 
           cd "$GITHUB_WORKSPACE"
 
+          location="${LOCATION:-$LOCATION_SECRET}"
+          resource_group_name="${RESOURCE_GROUP_NAME:-$RESOURCE_GROUP_NAME_SECRET}"
+          storage_account_prefix="${STORAGE_ACCOUNT_PREFIX:-$STORAGE_ACCOUNT_PREFIX_SECRET}"
+
+          if [[ -z "$resource_group_name" ]]; then
+            echo "Resource group name is missing. Set inputs.resourceGroupName or secret STATE_RG_NAME." >&2
+            exit 1
+          fi
+
+          if [[ -z "$storage_account_prefix" ]]; then
+            echo "Storage account prefix is missing. Set inputs.storageAccountPrefix or secret STATE_SA_PREFIX." >&2
+            exit 1
+          fi
+
+          normalized_prefix="$(printf '%s' "$storage_account_prefix" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
+          if [[ -z "$normalized_prefix" ]]; then
+            echo "Storage account prefix must contain at least one lowercase letter or digit." >&2
+            exit 1
+          fi
+
+          run_id="$GITHUB_RUN_ID"
+          prefix_length=$((24 - ${#run_id}))
+          if (( prefix_length < 1 )); then
+            echo "Generated storage account name would exceed Azure limits." >&2
+            exit 1
+          fi
+
+          storage_account_name="${normalized_prefix:0:prefix_length}${run_id}"
+
           deployment_name="bootstrap-${GITHUB_RUN_ID}"
 
           az deployment sub create \
             --name "$deployment_name" \
-            --location "$LOCATION" \
+            --location "$location" \
             --template-file "bootstrap.bicep" \
-            --parameters resourceGroupName="$RESOURCE_GROUP_NAME" \
-                         storageAccountName="$STORAGE_ACCOUNT_NAME" \
+            --parameters resourceGroupName="$resource_group_name" \
+                         storageAccountName="$storage_account_name" \
                          containerName="$CONTAINER_NAME" \
                          stateKey="$STATE_KEY"
 
