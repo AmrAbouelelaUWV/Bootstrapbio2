@@ -45,6 +45,7 @@ jobs:
       contents: read
 
     env:
+      BOOTSTRAP_DIR: layers/bootstrap
       LOCATION: ${{ inputs.location }}
       RESOURCE_GROUP_NAME: ${{ inputs.resourceGroupName }}
       RESOURCE_GROUP_NAME_SECRET: ${{ secrets.STATE_RG_NAME }}
@@ -71,7 +72,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
 
           requested_location="${LOCATION:-$LOCATION_SECRET}"
           resource_group_name="${RESOURCE_GROUP_NAME:-$RESOURCE_GROUP_NAME_SECRET}"
@@ -196,7 +197,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
 
           terraform init -reconfigure -input=false \
             -backend-config="resource_group_name=$resource_group_name" \
@@ -211,7 +212,7 @@ jobs:
 
           subscription_id=$(az account show --query id -o tsv)
 
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
 
           import_if_missing() {
             local address="$1"
@@ -234,6 +235,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
           terraform apply -auto-approve -input=false
         shell: bash
