@@ -5,8 +5,21 @@ This folder uses Bicep only to solve the chicken-and-egg problem for the Terrafo
 ## Ownership split
 
 - [bootstrap.bicep](bootstrap.bicep) creates the resource group and calls [bootstrap.storage.bicep](bootstrap.storage.bicep) to create the storage account and `tfstate` container.
-- Terraform takes over after that and manages the RG, storage account, container, and the rest of the bootstrap, such as CMK, private endpoint, DNS, identity wiring, and any additional backend hardening.
+- Terraform takes over after that and manages the RG, storage account, container, and the rest of the bootstrap, such as private endpoint, DNS, recovery settings, CMK, and identity wiring.
 - [backend.tf](backend.tf) stays empty except for the `azurerm` backend block so the pipeline can inject the Bicep outputs.
+
+## Hardening model
+
+- The Bicep seed keeps the backend reachable long enough for Terraform to adopt it.
+- Terraform is responsible for the BIO2-oriented hardening step: blob recovery settings, network firewall rules, private endpoint, and private DNS.
+- Do not disable public network access for the backend while running Terraform from a GitHub-hosted runner. Once the backend is private-only, Terraform must run from a network that can resolve and reach the private endpoint.
+
+## Current hardening options
+
+- `public_network_access_enabled=false` switches the storage account to private-only access.
+- `network_rules_enabled=true` enables deny-by-default firewall rules with `allowed_subnet_ids`, `allowed_ip_rules`, and `network_bypass`.
+- `private_endpoint_enabled=true` creates a blob private endpoint plus private DNS zone and VNet link. This requires `private_endpoint_subnet_id` and `private_dns_zone_virtual_network_id`.
+- Blob recovery defaults are enabled through versioning, change feed, last access time tracking, and 30-day blob/container delete retention.
 
 ## What the pipeline should do
 

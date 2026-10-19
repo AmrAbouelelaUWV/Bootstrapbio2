@@ -33,6 +33,81 @@ on:
         required: false
         default: bootstrap.tfstate
         type: string
+      publicNetworkAccessEnabled:
+        description: Keep public network access enabled for the backend storage account.
+        required: false
+        default: true
+        type: boolean
+      networkRulesEnabled:
+        description: Enable deny-by-default storage firewall rules.
+        required: false
+        default: false
+        type: boolean
+      networkBypass:
+        description: JSON array of storage firewall bypass values, for example ["AzureServices"].
+        required: false
+        default: '["AzureServices"]'
+        type: string
+      allowedSubnetIds:
+        description: JSON array of subnet IDs allowed by storage firewall rules.
+        required: false
+        default: '[]'
+        type: string
+      allowedIpRules:
+        description: JSON array of IP CIDR rules allowed by storage firewall rules.
+        required: false
+        default: '[]'
+        type: string
+      privateEndpointEnabled:
+        description: Create a private endpoint and private DNS for the blob service.
+        required: false
+        default: false
+        type: boolean
+      privateEndpointSubnetId:
+        description: Subnet ID for the storage private endpoint.
+        required: false
+        default: ''
+        type: string
+      privateDnsZoneName:
+        description: Private DNS zone name for the blob endpoint.
+        required: false
+        default: privatelink.blob.core.windows.net
+        type: string
+      privateDnsZoneResourceGroupName:
+        description: Resource group for the private DNS zone. Leave empty to use the bootstrap RG.
+        required: false
+        default: ''
+        type: string
+      privateDnsZoneVirtualNetworkId:
+        description: Virtual network ID to link to the private DNS zone.
+        required: false
+        default: ''
+        type: string
+      blobVersioningEnabled:
+        description: Enable blob versioning for state recovery.
+        required: false
+        default: true
+        type: boolean
+      changeFeedEnabled:
+        description: Enable the storage account change feed.
+        required: false
+        default: true
+        type: boolean
+      lastAccessTimeEnabled:
+        description: Enable blob last access time tracking.
+        required: false
+        default: true
+        type: boolean
+      blobDeleteRetentionDays:
+        description: Deleted blob retention in days.
+        required: false
+        default: '30'
+        type: string
+      containerDeleteRetentionDays:
+        description: Deleted container retention in days.
+        required: false
+        default: '30'
+        type: string
 
 jobs:
   bootstrap:
@@ -56,6 +131,21 @@ jobs:
       LOCATION_SECRET: ${{ secrets.STATE_LOCATION }}
       CONTAINER_NAME: ${{ inputs.containerName }}
       STATE_KEY: ${{ inputs.stateKey }}
+      PUBLIC_NETWORK_ACCESS_ENABLED: ${{ inputs.publicNetworkAccessEnabled }}
+      NETWORK_RULES_ENABLED: ${{ inputs.networkRulesEnabled }}
+      NETWORK_BYPASS: ${{ inputs.networkBypass }}
+      ALLOWED_SUBNET_IDS: ${{ inputs.allowedSubnetIds }}
+      ALLOWED_IP_RULES: ${{ inputs.allowedIpRules }}
+      PRIVATE_ENDPOINT_ENABLED: ${{ inputs.privateEndpointEnabled }}
+      PRIVATE_ENDPOINT_SUBNET_ID: ${{ inputs.privateEndpointSubnetId }}
+      PRIVATE_DNS_ZONE_NAME: ${{ inputs.privateDnsZoneName }}
+      PRIVATE_DNS_ZONE_RESOURCE_GROUP_NAME: ${{ inputs.privateDnsZoneResourceGroupName }}
+      PRIVATE_DNS_ZONE_VIRTUAL_NETWORK_ID: ${{ inputs.privateDnsZoneVirtualNetworkId }}
+      BLOB_VERSIONING_ENABLED: ${{ inputs.blobVersioningEnabled }}
+      CHANGE_FEED_ENABLED: ${{ inputs.changeFeedEnabled }}
+      LAST_ACCESS_TIME_ENABLED: ${{ inputs.lastAccessTimeEnabled }}
+      BLOB_DELETE_RETENTION_DAYS: ${{ inputs.blobDeleteRetentionDays }}
+      CONTAINER_DELETE_RETENTION_DAYS: ${{ inputs.containerDeleteRetentionDays }}
 
     steps:
       - name: Checkout
@@ -188,6 +278,32 @@ jobs:
           echo "TF_VAR_storage_account_name=$storage_account_name" >> "$GITHUB_ENV"
           echo "TF_VAR_container_name=$container_name" >> "$GITHUB_ENV"
           echo "TF_VAR_tags={}" >> "$GITHUB_ENV"
+          echo "TF_VAR_public_network_access_enabled=$PUBLIC_NETWORK_ACCESS_ENABLED" >> "$GITHUB_ENV"
+          echo "TF_VAR_network_rules_enabled=$NETWORK_RULES_ENABLED" >> "$GITHUB_ENV"
+          echo "TF_VAR_network_bypass=$NETWORK_BYPASS" >> "$GITHUB_ENV"
+          echo "TF_VAR_allowed_subnet_ids=$ALLOWED_SUBNET_IDS" >> "$GITHUB_ENV"
+          echo "TF_VAR_allowed_ip_rules=$ALLOWED_IP_RULES" >> "$GITHUB_ENV"
+          echo "TF_VAR_private_endpoint_enabled=$PRIVATE_ENDPOINT_ENABLED" >> "$GITHUB_ENV"
+
+          if [[ -n "$PRIVATE_ENDPOINT_SUBNET_ID" ]]; then
+            echo "TF_VAR_private_endpoint_subnet_id=$PRIVATE_ENDPOINT_SUBNET_ID" >> "$GITHUB_ENV"
+          fi
+
+          echo "TF_VAR_private_dns_zone_name=$PRIVATE_DNS_ZONE_NAME" >> "$GITHUB_ENV"
+
+          if [[ -n "$PRIVATE_DNS_ZONE_RESOURCE_GROUP_NAME" ]]; then
+            echo "TF_VAR_private_dns_zone_resource_group_name=$PRIVATE_DNS_ZONE_RESOURCE_GROUP_NAME" >> "$GITHUB_ENV"
+          fi
+
+          if [[ -n "$PRIVATE_DNS_ZONE_VIRTUAL_NETWORK_ID" ]]; then
+            echo "TF_VAR_private_dns_zone_virtual_network_id=$PRIVATE_DNS_ZONE_VIRTUAL_NETWORK_ID" >> "$GITHUB_ENV"
+          fi
+
+          echo "TF_VAR_blob_versioning_enabled=$BLOB_VERSIONING_ENABLED" >> "$GITHUB_ENV"
+          echo "TF_VAR_change_feed_enabled=$CHANGE_FEED_ENABLED" >> "$GITHUB_ENV"
+          echo "TF_VAR_last_access_time_enabled=$LAST_ACCESS_TIME_ENABLED" >> "$GITHUB_ENV"
+          echo "TF_VAR_blob_delete_retention_days=$BLOB_DELETE_RETENTION_DAYS" >> "$GITHUB_ENV"
+          echo "TF_VAR_container_delete_retention_days=$CONTAINER_DELETE_RETENTION_DAYS" >> "$GITHUB_ENV"
         shell: bash
 
       - name: Setup Terraform
