@@ -176,6 +176,31 @@ jobs:
 
           subscription_id=$(az account show --query id -o tsv)
 
+          normalize_storage_account_name() {
+            printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
+          }
+
+          build_generated_storage_account_name() {
+            local prefix_value="$1"
+            local subscription_value="$2"
+            local resource_group_value="$3"
+
+            normalized_prefix="$(printf '%s' "$prefix_value" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
+            if [[ -z "$normalized_prefix" ]]; then
+              echo "Storage account prefix must contain at least one lowercase letter or digit." >&2
+              exit 1
+            fi
+
+            hash_suffix="$(printf '%s' "${subscription_value}-${resource_group_value}" | sha256sum | cut -c1-10)"
+            prefix_length=$((24 - ${#hash_suffix}))
+            if (( prefix_length < 3 )); then
+              echo "Storage account prefix leaves no room for a stable unique suffix." >&2
+              exit 1
+            fi
+
+            printf '%s%s' "${normalized_prefix:0:prefix_length}" "$hash_suffix"
+          }
+
           if az group exists --name "$resource_group_name" | grep -qi true; then
             existing_location=$(az group show --name "$resource_group_name" --query location -o tsv)
 
@@ -195,7 +220,11 @@ jobs:
           fi
 
           if [[ -n "$storage_account_name" ]]; then
-            storage_account_name="$(printf '%s' "$storage_account_name" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
+            storage_account_name="$(normalize_storage_account_name "$storage_account_name")"
+            if [[ -z "$storage_account_name" ]]; then
+              echo "Storage account name must contain at least one lowercase letter or digit." >&2
+              exit 1
+            fi
           fi
 
           if [[ -z "$storage_account_name" ]]; then
@@ -211,25 +240,29 @@ jobs:
               printf '%s\n' "${existing_accounts[@]}" >&2
               exit 1
             else
-              if [[ -z "$storage_account_prefix" ]]; then
-                echo "Storage account prefix is missing. Set inputs.storageAccountPrefix or secret STATE_SA_PREFIX." >&2
-                exit 1
+              if [[ -n "$storage_account_name" ]]; then
+                name_available=$(az storage account check-name --name "$storage_account_name" --query nameAvailable -o tsv)
+                if [[ "$name_available" == "true" ]]; then
+                  echo "Using requested storage account name '$storage_account_name'."
+                else
+                  echo "Requested storage account name '$storage_account_name' is already taken; falling back to a generated name." >&2
+                  storage_account_name=""
+                fi
               fi
 
-              normalized_prefix="$(printf '%s' "$storage_account_prefix" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
-              if [[ -z "$normalized_prefix" ]]; then
-                echo "Storage account prefix must contain at least one lowercase letter or digit." >&2
-                exit 1
+              if [[ -z "$storage_account_name" ]]; then
+                if [[ -z "$storage_account_prefix" ]]; then
+                  echo "Storage account prefix is missing. Set inputs.storageAccountPrefix or secret STATE_SA_PREFIX." >&2
+                  exit 1
+                fi
+
+                storage_account_name="$(build_generated_storage_account_name "$storage_account_prefix" "$subscription_id" "$resource_group_name")"
               fi
 
-              hash_suffix="$(printf '%s' "${subscription_id}-${resource_group_name}" | sha256sum | cut -c1-10)"
-              prefix_length=$((24 - ${#hash_suffix}))
-              if (( prefix_length < 3 )); then
-                echo "Storage account prefix leaves no room for a stable unique suffix." >&2
+              if ! [[ "$storage_account_name" =~ ^[a-z0-9]{3,24}$ ]]; then
+                echo "Storage account name '$storage_account_name' must be 3-24 lowercase letters or digits." >&2
                 exit 1
               fi
-
-              storage_account_name="${normalized_prefix:0:prefix_length}${hash_suffix}"
             fi
           fi
 

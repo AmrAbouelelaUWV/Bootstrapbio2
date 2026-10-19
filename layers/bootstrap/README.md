@@ -25,7 +25,7 @@ This folder uses Bicep only to solve the chicken-and-egg problem for the Terrafo
 
 1. Deploy [bootstrap.bicep](bootstrap.bicep) at subscription scope.
 2. Resolve the backend location from Azure when the resource group already exists; only require an explicit `location` when creating a new backend.
-3. Resolve a stable backend storage account name. Prefer an explicit `storageAccountName`; otherwise reuse the single existing storage account in the backend resource group; only generate a deterministic fallback name when nothing exists yet.
+3. Resolve a stable backend storage account name. Prefer an explicit `storageAccountName`; otherwise reuse the single existing storage account in the backend resource group; if the explicit name is already taken, fall back to a deterministic generated name instead of failing immediately.
 4. Export the same bootstrap `location` into Terraform input variables and run `terraform init -reconfigure` in the Terraform root with those backend values.
 5. Import the Bicep-created RG, storage account, and container into Terraform state when they are not already tracked.
 6. Apply Terraform so the remainder of the bootstrap is managed from that point onward.
