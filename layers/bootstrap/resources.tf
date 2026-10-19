@@ -2,6 +2,10 @@ resource "azurerm_resource_group" "tfstate" {
   name     = var.resource_group_name
   location = var.location
   tags     = var.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "azurerm_storage_account" "tfstate" {
@@ -15,10 +19,18 @@ resource "azurerm_storage_account" "tfstate" {
   public_network_access           = "Enabled"
   allow_nested_items_to_be_public = false
   tags                            = var.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "azurerm_storage_container" "tfstate" {
   name                  = var.container_name
   storage_account_id    = azurerm_storage_account.tfstate.id
   container_access_type = "private"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

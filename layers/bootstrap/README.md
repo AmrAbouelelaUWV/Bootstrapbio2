@@ -11,15 +11,17 @@ This folder uses Bicep only to solve the chicken-and-egg problem for the Terrafo
 ## What the pipeline should do
 
 1. Deploy [bootstrap.bicep](bootstrap.bicep) at subscription scope.
-2. Read the deployment outputs for `resourceGroupName`, `storageAccountName`, `containerName`, and `stateKey`.
-3. Run `terraform init -reconfigure` in the Terraform root with those backend values.
-4. Import the Bicep-created RG, storage account, and container into Terraform state.
-5. Apply Terraform so the remainder of the bootstrap is managed from that point onward.
+2. Resolve the backend location from Azure when the resource group already exists; only require an explicit `location` when creating a new backend.
+3. Resolve a stable backend storage account name. Prefer an explicit `storageAccountName`; otherwise reuse the single existing storage account in the backend resource group; only generate a deterministic fallback name when nothing exists yet.
+4. Export the same bootstrap `location` into Terraform input variables and run `terraform init -reconfigure` in the Terraform root with those backend values.
+5. Import the Bicep-created RG, storage account, and container into Terraform state when they are not already tracked.
+6. Apply Terraform so the remainder of the bootstrap is managed from that point onward.
 
 ## Pipeline file
 
-- [.github/workflows/bootstrap.yml](.github/workflows/bootstrap.yml) contains the end-to-end flow for the Bicep seed, Terraform backend initialization, imports, and apply.
-- The workflow expects a GitHub secret named `AZURE_CREDENTIALS` for Azure login.
+- [.github/workflows/bootstrapbiceptf.yml](.github/workflows/bootstrapbiceptf.yml) contains the end-to-end flow for the Bicep seed, Terraform backend initialization, imports, and apply.
+- The workflow logs in with `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`.
+- For repeatable reruns, prefer setting `storageAccountName` or secret `STATE_SA_NAME` so the backend target is explicit when a resource group contains multiple storage accounts.
 
 ## Example Azure CLI flow
 
@@ -37,6 +39,8 @@ terraform init -reconfigure \
   -backend-config="storage_account_name=sttfstate001" \
   -backend-config="container_name=tfstate" \
   -backend-config="key=bootstrap.tfstate"
+
+export TF_VAR_location=westeurope
 
 terraform import azurerm_resource_group.tfstate /subscriptions/<subscription-id>/resourceGroups/tfstate-rg
 terraform import azurerm_storage_account.tfstate /subscriptions/<subscription-id>/resourceGroups/tfstate-rg/providers/Microsoft.Storage/storageAccounts/sttfstate001

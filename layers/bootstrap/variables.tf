@@ -6,7 +6,6 @@ variable "resource_group_name" {
 variable "location" {
   description = "Azure location for the bootstrap resources."
   type        = string
-  default     = "eastus"
 }
 
 variable "storage_account_name" {
