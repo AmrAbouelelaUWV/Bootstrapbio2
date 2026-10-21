@@ -426,7 +426,6 @@ jobs:
 
                   existing_crypto_assignment=$(az role assignment list \
                     --assignee-object-id "$sp_object_id" \
-                    --assignee-principal-type ServicePrincipal \
                     --role "Key Vault Crypto Officer" \
                     --scope "$vault_scope" \
                     --query "[0].id" \
@@ -435,7 +434,6 @@ jobs:
                   if [[ -z "$existing_crypto_assignment" ]]; then
                     az role assignment create \
                       --assignee-object-id "$sp_object_id" \
-                      --assignee-principal-type ServicePrincipal \
                       --role "Key Vault Crypto Officer" \
                       --scope "$vault_scope" \
                       --only-show-errors > /dev/null
@@ -505,7 +503,6 @@ jobs:
 
           existing_assignment=$(az role assignment list \
             --assignee-object-id "$sp_object_id" \
-            --assignee-principal-type ServicePrincipal \
             --role "Storage Blob Data Contributor" \
             --scope "$storage_scope" \
             --query "[0].id" \
@@ -516,7 +513,6 @@ jobs:
           else
             az role assignment create \
               --assignee-object-id "$sp_object_id" \
-              --assignee-principal-type ServicePrincipal \
               --role "Storage Blob Data Contributor" \
               --scope "$storage_scope" \
               --only-show-errors > /dev/null
