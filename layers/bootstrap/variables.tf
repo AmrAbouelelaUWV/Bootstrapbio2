@@ -26,7 +26,7 @@ variable "tags" {
 variable "public_network_access_enabled" {
   description = "Keeps public network access enabled for the backend storage account. Disable only when Terraform runs from a network that can resolve and reach the private endpoint."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "network_rules_enabled" {
@@ -38,7 +38,7 @@ variable "network_rules_enabled" {
 variable "network_bypass" {
   description = "Trusted Azure service bypasses for the storage account firewall."
   type        = list(string)
-  default     = ["AzureServices"]
+  default     = []
 }
 
 variable "allowed_subnet_ids" {
@@ -116,7 +116,7 @@ variable "container_delete_retention_days" {
 variable "cmk_enabled" {
   description = "Enables customer-managed key encryption for the Terraform state storage account."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "cmk_key_vault_id" {

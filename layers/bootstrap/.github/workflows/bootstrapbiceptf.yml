@@ -36,7 +36,7 @@ on:
       publicNetworkAccessEnabled:
         description: Keep public network access enabled for the backend storage account.
         required: false
-        default: true
+        default: false
         type: boolean
       networkRulesEnabled:
         description: Enable deny-by-default storage firewall rules.
@@ -143,7 +143,7 @@ jobs:
       STATE_KEY: ${{ inputs.stateKey }}
       PUBLIC_NETWORK_ACCESS_ENABLED: ${{ inputs.publicNetworkAccessEnabled }}
       NETWORK_RULES_ENABLED: ${{ inputs.networkRulesEnabled }}
-      NETWORK_BYPASS: '["AzureServices"]'
+      NETWORK_BYPASS: '[]'
       ALLOWED_SUBNET_IDS: '[]'
       ALLOWED_IP_RULES: '[]'
       PRIVATE_ENDPOINT_ENABLED: ${{ inputs.privateEndpointEnabled }}
@@ -354,12 +354,12 @@ jobs:
           echo "TF_VAR_blob_delete_retention_days=$BLOB_DELETE_RETENTION_DAYS" >> "$GITHUB_ENV"
           echo "TF_VAR_container_delete_retention_days=$CONTAINER_DELETE_RETENTION_DAYS" >> "$GITHUB_ENV"
 
-          cmk_effective_enabled="$CMK_ENABLED"
-
           if [[ "$CMK_ENABLED" == "true" ]]; then
             cmk_key_vault_id="$CMK_KEY_VAULT_ID"
             cmk_key_vault_name="${CMK_KEY_VAULT_NAME:-$CMK_KEY_VAULT_NAME_SECRET}"
             cmk_key_name="$CMK_KEY_NAME"
+            client_id="${{ secrets.AZURE_CLIENT_ID }}"
+            sp_object_id=$(az ad sp show --id "$client_id" --query id -o tsv)
 
             if [[ -z "$cmk_key_vault_id" ]]; then
               if [[ -n "$cmk_key_vault_name" ]]; then
@@ -422,8 +422,48 @@ jobs:
 
               if [[ $create_exit_code -ne 0 ]]; then
                 if printf '%s' "$create_output" | grep -qi "ForbiddenByRbac\|Caller is not authorized"; then
-                  echo "CMK fallback: current identity has no permission to create keys in Key Vault '$cmk_key_vault_name'. Continuing this run with CMK disabled." >&2
-                  cmk_effective_enabled="false"
+                  vault_scope="$cmk_key_vault_id"
+
+                  existing_crypto_assignment=$(az role assignment list \
+                    --assignee-object-id "$sp_object_id" \
+                    --assignee-principal-type ServicePrincipal \
+                    --role "Key Vault Crypto Officer" \
+                    --scope "$vault_scope" \
+                    --query "[0].id" \
+                    -o tsv)
+
+                  if [[ -z "$existing_crypto_assignment" ]]; then
+                    az role assignment create \
+                      --assignee-object-id "$sp_object_id" \
+                      --assignee-principal-type ServicePrincipal \
+                      --role "Key Vault Crypto Officer" \
+                      --scope "$vault_scope" \
+                      --only-show-errors > /dev/null
+                  fi
+
+                  for attempt in {1..12}; do
+                    set +e
+                    retry_output=$(az keyvault key create \
+                      --vault-name "$cmk_key_vault_name" \
+                      --name "$cmk_key_name" \
+                      --kty RSA \
+                      --size 2048 \
+                      --only-show-errors 2>&1)
+                    retry_exit_code=$?
+                    set -e
+
+                    if [[ $retry_exit_code -eq 0 ]]; then
+                      break
+                    fi
+
+                    if [[ $attempt -eq 12 ]]; then
+                      printf '%s\n' "$retry_output" >&2
+                      echo "Failed to create CMK key after assigning Key Vault Crypto Officer role. Check RBAC propagation and role assignment permissions." >&2
+                      exit $retry_exit_code
+                    fi
+
+                    sleep 10
+                  done
                 else
                   printf '%s\n' "$create_output" >&2
                   exit $create_exit_code
@@ -431,13 +471,11 @@ jobs:
               fi
             fi
 
-            if [[ "$cmk_effective_enabled" == "true" ]]; then
-              echo "TF_VAR_cmk_key_vault_id=$cmk_key_vault_id" >> "$GITHUB_ENV"
-              echo "TF_VAR_cmk_key_name=$cmk_key_name" >> "$GITHUB_ENV"
-            fi
+            echo "TF_VAR_cmk_key_vault_id=$cmk_key_vault_id" >> "$GITHUB_ENV"
+            echo "TF_VAR_cmk_key_name=$cmk_key_name" >> "$GITHUB_ENV"
           fi
 
-          echo "TF_VAR_cmk_enabled=$cmk_effective_enabled" >> "$GITHUB_ENV"
+          echo "TF_VAR_cmk_enabled=$CMK_ENABLED" >> "$GITHUB_ENV"
 
           if [[ -n "$CMK_KEY_VERSION" ]]; then
             echo "TF_VAR_cmk_key_version=$CMK_KEY_VERSION" >> "$GITHUB_ENV"
