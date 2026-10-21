@@ -353,7 +353,8 @@ jobs:
           echo "TF_VAR_last_access_time_enabled=$LAST_ACCESS_TIME_ENABLED" >> "$GITHUB_ENV"
           echo "TF_VAR_blob_delete_retention_days=$BLOB_DELETE_RETENTION_DAYS" >> "$GITHUB_ENV"
           echo "TF_VAR_container_delete_retention_days=$CONTAINER_DELETE_RETENTION_DAYS" >> "$GITHUB_ENV"
-          echo "TF_VAR_cmk_enabled=$CMK_ENABLED" >> "$GITHUB_ENV"
+
+          cmk_effective_enabled="$CMK_ENABLED"
 
           if [[ "$CMK_ENABLED" == "true" ]]; then
             cmk_key_vault_id="$CMK_KEY_VAULT_ID"
@@ -409,17 +410,34 @@ jobs:
             cmk_key_vault_name="${cmk_key_vault_id##*/}"
 
             if ! az keyvault key show --vault-name "$cmk_key_vault_name" --name "$cmk_key_name" > /dev/null 2>&1; then
-              az keyvault key create \
+              set +e
+              create_output=$(az keyvault key create \
                 --vault-name "$cmk_key_vault_name" \
                 --name "$cmk_key_name" \
                 --kty RSA \
                 --size 2048 \
-                --only-show-errors > /dev/null
+                --only-show-errors 2>&1)
+              create_exit_code=$?
+              set -e
+
+              if [[ $create_exit_code -ne 0 ]]; then
+                if printf '%s' "$create_output" | grep -qi "ForbiddenByRbac\|Caller is not authorized"; then
+                  echo "CMK fallback: current identity has no permission to create keys in Key Vault '$cmk_key_vault_name'. Continuing this run with CMK disabled." >&2
+                  cmk_effective_enabled="false"
+                else
+                  printf '%s\n' "$create_output" >&2
+                  exit $create_exit_code
+                fi
+              fi
             fi
 
-            echo "TF_VAR_cmk_key_vault_id=$cmk_key_vault_id" >> "$GITHUB_ENV"
-            echo "TF_VAR_cmk_key_name=$cmk_key_name" >> "$GITHUB_ENV"
+            if [[ "$cmk_effective_enabled" == "true" ]]; then
+              echo "TF_VAR_cmk_key_vault_id=$cmk_key_vault_id" >> "$GITHUB_ENV"
+              echo "TF_VAR_cmk_key_name=$cmk_key_name" >> "$GITHUB_ENV"
+            fi
           fi
+
+          echo "TF_VAR_cmk_enabled=$cmk_effective_enabled" >> "$GITHUB_ENV"
 
           if [[ -n "$CMK_KEY_VERSION" ]]; then
             echo "TF_VAR_cmk_key_version=$CMK_KEY_VERSION" >> "$GITHUB_ENV"
