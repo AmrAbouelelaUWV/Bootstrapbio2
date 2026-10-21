@@ -32,7 +32,7 @@ variable "public_network_access_enabled" {
 variable "network_rules_enabled" {
   description = "Applies storage account network rules. When enabled, traffic is denied by default except for the configured bypasses, subnets, and IP rules."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "network_bypass" {
@@ -56,7 +56,7 @@ variable "allowed_ip_rules" {
 variable "private_endpoint_enabled" {
   description = "Creates a private endpoint for the blob service and links it to a private DNS zone."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "private_endpoint_subnet_id" {
@@ -111,4 +111,112 @@ variable "container_delete_retention_days" {
   description = "Retention in days for deleted blob containers."
   type        = number
   default     = 30
+}
+
+variable "cmk_enabled" {
+  description = "Enables customer-managed key encryption for the Terraform state storage account."
+  type        = bool
+  default     = false
+}
+
+variable "cmk_key_vault_id" {
+  description = "Key Vault resource ID that contains the CMK used for the Terraform state storage account."
+  type        = string
+  default     = null
+}
+
+variable "cmk_key_name" {
+  description = "Key name in Key Vault used as customer-managed key for the Terraform state storage account."
+  type        = string
+  default     = null
+}
+
+variable "cmk_key_version" {
+  description = "Optional key version in Key Vault. Leave null to use the latest key version."
+  type        = string
+  default     = null
+}
+
+variable "cmk_user_assigned_identity_id" {
+  description = "Existing user-assigned managed identity resource ID used by the storage account to access the Key Vault key."
+  type        = string
+  default     = null
+}
+
+variable "cmk_user_assigned_identity_name" {
+  description = "Name of the user-assigned managed identity created when CMK is enabled and no existing identity ID is provided."
+  type        = string
+  default     = "tfstate-cmk-uai"
+}
+
+variable "self_hosted_runner_enabled" {
+  description = "Creates infrastructure for an ephemeral self-hosted GitHub Actions runner using an Azure Container Apps Job."
+  type        = bool
+  default     = false
+}
+
+variable "self_hosted_runner_job_name" {
+  description = "Name of the self-hosted runner Container Apps Job."
+  type        = string
+  default     = "bootstrap-runner-job"
+}
+
+variable "self_hosted_runner_environment_name" {
+  description = "Name of the Container Apps environment used for the ephemeral runner job."
+  type        = string
+  default     = "bootstrap-runner-env"
+}
+
+variable "self_hosted_runner_label" {
+  description = "GitHub Actions label assigned to the self-hosted runner."
+  type        = string
+  default     = "bio2-runner"
+}
+
+variable "self_hosted_runner_image" {
+  description = "Container image used for the ephemeral self-hosted runner job."
+  type        = string
+  default     = "ubuntu:22.04"
+}
+
+variable "self_hosted_runner_cpu" {
+  description = "vCPU assigned to the ephemeral runner container."
+  type        = number
+  default     = 1
+}
+
+variable "self_hosted_runner_memory" {
+  description = "Memory assigned to the ephemeral runner container."
+  type        = string
+  default     = "2Gi"
+}
+
+variable "self_hosted_runner_job_timeout_in_seconds" {
+  description = "Maximum runtime in seconds for one ephemeral runner job execution."
+  type        = number
+  default     = 3600
+}
+
+variable "self_hosted_runner_repository" {
+  description = "GitHub repository in owner/repo format used by the ephemeral runner for registration."
+  type        = string
+  default     = null
+}
+
+variable "bootstrap_network_address_space" {
+  description = "Address space used for the bootstrap virtual network that hosts the runner and future private endpoints."
+  type        = list(string)
+  default     = ["10.42.0.0/16"]
+}
+
+variable "self_hosted_runner_subnet_prefixes" {
+  description = "Subnet prefixes for the Container Apps runner environment subnet."
+  type        = list(string)
+  default     = ["10.42.1.0/24"]
+}
+
+variable "private_endpoint_subnet_prefixes" {
+  description = "Subnet prefixes for the private endpoint subnet."
+  type        = list(string)
+  default     = ["10.42.2.0/24"]
 }

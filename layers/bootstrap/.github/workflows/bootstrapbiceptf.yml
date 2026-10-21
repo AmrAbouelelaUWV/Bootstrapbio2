@@ -41,7 +41,7 @@ on:
       networkRulesEnabled:
         description: Enable deny-by-default storage firewall rules.
         required: false
-        default: false
+        default: true
         type: boolean
       networkBypass:
         description: JSON array of storage firewall bypass values, for example ["AzureServices"].
@@ -61,7 +61,7 @@ on:
       privateEndpointEnabled:
         description: Create a private endpoint and private DNS for the blob service.
         required: false
-        default: false
+        default: true
         type: boolean
       privateEndpointSubnetId:
         description: Subnet ID for the storage private endpoint.
@@ -108,6 +108,56 @@ on:
         required: false
         default: '30'
         type: string
+      cmkEnabled:
+        description: Enable customer-managed key encryption for the state storage account.
+        required: false
+        default: true
+        type: boolean
+      cmkKeyVaultId:
+        description: Resource ID of the Key Vault that contains the CMK.
+        required: false
+        default: ''
+        type: string
+      cmkKeyVaultName:
+        description: Key Vault name used to resolve cmkKeyVaultId automatically when ID is not provided.
+        required: false
+        default: kv-bootstrap-cmk
+        type: string
+      cmkKeyName:
+        description: Key name in Key Vault used as CMK for state storage.
+        required: false
+        default: tfstate-cmk-key
+        type: string
+      cmkKeyVersion:
+        description: Optional key version in Key Vault.
+        required: false
+        default: ''
+        type: string
+      cmkUserAssignedIdentityId:
+        description: Optional existing user-assigned identity ID for CMK access.
+        required: false
+        default: ''
+        type: string
+      cmkUserAssignedIdentityName:
+        description: Name for the CMK user-assigned identity when the module creates it.
+        required: false
+        default: tfstate-cmk-uai
+        type: string
+      selfHostedRunnerEnabled:
+        description: Provision and register an ephemeral self-hosted runner via Azure Container Apps Job.
+        required: false
+        default: false
+        type: boolean
+      selfHostedRunnerImage:
+        description: Container image used for the ephemeral self-hosted runner job.
+        required: false
+        default: ubuntu:22.04
+        type: string
+      selfHostedRunnerLabel:
+        description: GitHub runner label used by the verification job.
+        required: false
+        default: bio2-runner
+        type: string
 
 jobs:
   bootstrap:
@@ -146,6 +196,18 @@ jobs:
       LAST_ACCESS_TIME_ENABLED: ${{ inputs.lastAccessTimeEnabled }}
       BLOB_DELETE_RETENTION_DAYS: ${{ inputs.blobDeleteRetentionDays }}
       CONTAINER_DELETE_RETENTION_DAYS: ${{ inputs.containerDeleteRetentionDays }}
+      CMK_ENABLED: ${{ inputs.cmkEnabled }}
+      CMK_KEY_VAULT_ID: ${{ inputs.cmkKeyVaultId }}
+      CMK_KEY_VAULT_NAME: ${{ inputs.cmkKeyVaultName }}
+      CMK_KEY_VAULT_NAME_SECRET: ${{ secrets.CMK_KEY_VAULT_NAME }}
+      CMK_KEY_NAME: ${{ inputs.cmkKeyName }}
+      CMK_KEY_VERSION: ${{ inputs.cmkKeyVersion }}
+      CMK_USER_ASSIGNED_IDENTITY_ID: ${{ inputs.cmkUserAssignedIdentityId }}
+      CMK_USER_ASSIGNED_IDENTITY_NAME: ${{ inputs.cmkUserAssignedIdentityName }}
+      SELF_HOSTED_RUNNER_ENABLED: ${{ inputs.selfHostedRunnerEnabled }}
+      SELF_HOSTED_RUNNER_IMAGE: ${{ inputs.selfHostedRunnerImage }}
+      SELF_HOSTED_RUNNER_LABEL: ${{ inputs.selfHostedRunnerLabel }}
+      GITHUB_RUNNER_PAT: ${{ secrets.GITHUB_RUNNER_PAT }}
 
     steps:
       - name: Checkout
@@ -256,6 +318,15 @@ jobs:
             exit 1
           fi
 
+          if [[ "$SELF_HOSTED_RUNNER_ENABLED" == "true" ]]; then
+            echo "TF_VAR_self_hosted_runner_enabled=true" >> "$GITHUB_ENV"
+            echo "TF_VAR_self_hosted_runner_image=$SELF_HOSTED_RUNNER_IMAGE" >> "$GITHUB_ENV"
+            echo "TF_VAR_self_hosted_runner_label=$SELF_HOSTED_RUNNER_LABEL" >> "$GITHUB_ENV"
+            echo "TF_VAR_self_hosted_runner_repository=$GITHUB_REPOSITORY" >> "$GITHUB_ENV"
+          else
+            echo "TF_VAR_self_hosted_runner_enabled=false" >> "$GITHUB_ENV"
+          fi
+
           deployment_name="bootstrap-${GITHUB_RUN_ID}"
 
           az deployment sub create \
@@ -322,10 +393,143 @@ jobs:
           echo "TF_VAR_last_access_time_enabled=$LAST_ACCESS_TIME_ENABLED" >> "$GITHUB_ENV"
           echo "TF_VAR_blob_delete_retention_days=$BLOB_DELETE_RETENTION_DAYS" >> "$GITHUB_ENV"
           echo "TF_VAR_container_delete_retention_days=$CONTAINER_DELETE_RETENTION_DAYS" >> "$GITHUB_ENV"
+          echo "TF_VAR_cmk_enabled=$CMK_ENABLED" >> "$GITHUB_ENV"
+
+          if [[ "$CMK_ENABLED" == "true" ]]; then
+            cmk_key_vault_id="$CMK_KEY_VAULT_ID"
+            cmk_key_vault_name="${CMK_KEY_VAULT_NAME:-$CMK_KEY_VAULT_NAME_SECRET}"
+            cmk_key_name="$CMK_KEY_NAME"
+
+            if [[ -z "$cmk_key_vault_id" ]]; then
+              if [[ -n "$cmk_key_vault_name" ]]; then
+                cmk_key_vault_id=$(az keyvault show --name "$cmk_key_vault_name" --query id -o tsv 2>/dev/null || true)
+              fi
+
+              if [[ -z "$cmk_key_vault_id" ]]; then
+                mapfile -t discovered_key_vault_ids < <(az keyvault list \
+                  --resource-group "$resource_group_name" \
+                  --query "[].id" \
+                  -o tsv 2>/dev/null || true)
+
+                if (( ${#discovered_key_vault_ids[@]} == 1 )); then
+                  cmk_key_vault_id="${discovered_key_vault_ids[0]}"
+                elif (( ${#discovered_key_vault_ids[@]} > 1 )); then
+                  echo "Multiple Key Vaults found in resource group '$resource_group_name'; provide cmkKeyVaultId or cmkKeyVaultName." >&2
+                  printf '%s\n' "${discovered_key_vault_ids[@]}" >&2
+                  exit 1
+                fi
+              fi
+
+              if [[ -z "$cmk_key_vault_id" ]]; then
+                if [[ -z "$cmk_key_vault_name" ]]; then
+                  generated_suffix=$(printf '%s' "${subscription_id}-${resource_group_name}" | sha256sum | cut -c1-18)
+                  cmk_key_vault_name="kv${generated_suffix}"
+                fi
+
+                name_available=$(az keyvault check-name --name "$cmk_key_vault_name" --query nameAvailable -o tsv)
+                if [[ "$name_available" != "true" ]]; then
+                  generated_suffix=$(printf '%s' "${subscription_id}-${resource_group_name}-${storage_account_name}" | sha256sum | cut -c1-18)
+                  cmk_key_vault_name="kv${generated_suffix}"
+                fi
+
+                az keyvault create \
+                  --name "$cmk_key_vault_name" \
+                  --resource-group "$resource_group_name" \
+                  --location "$location" \
+                  --sku standard \
+                  --enable-rbac-authorization true \
+                  --retention-days 90 \
+                  --only-show-errors > /dev/null
+
+                cmk_key_vault_id=$(az keyvault show --name "$cmk_key_vault_name" --query id -o tsv)
+                echo "Created Key Vault '$cmk_key_vault_name' for CMK."
+              fi
+            fi
+
+            cmk_key_vault_name="${cmk_key_vault_id##*/}"
+
+            if ! az keyvault key show --vault-name "$cmk_key_vault_name" --name "$cmk_key_name" > /dev/null 2>&1; then
+              az keyvault key create \
+                --vault-name "$cmk_key_vault_name" \
+                --name "$cmk_key_name" \
+                --kty RSA \
+                --size 2048 \
+                --only-show-errors > /dev/null
+            fi
+
+            echo "TF_VAR_cmk_key_vault_id=$cmk_key_vault_id" >> "$GITHUB_ENV"
+            echo "TF_VAR_cmk_key_name=$cmk_key_name" >> "$GITHUB_ENV"
+          fi
+
+          if [[ -n "$CMK_KEY_VERSION" ]]; then
+            echo "TF_VAR_cmk_key_version=$CMK_KEY_VERSION" >> "$GITHUB_ENV"
+          fi
+
+          if [[ -n "$CMK_USER_ASSIGNED_IDENTITY_ID" ]]; then
+            echo "TF_VAR_cmk_user_assigned_identity_id=$CMK_USER_ASSIGNED_IDENTITY_ID" >> "$GITHUB_ENV"
+          fi
+
+          if [[ -n "$CMK_USER_ASSIGNED_IDENTITY_NAME" ]]; then
+            echo "TF_VAR_cmk_user_assigned_identity_name=$CMK_USER_ASSIGNED_IDENTITY_NAME" >> "$GITHUB_ENV"
+          fi
         shell: bash
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Grant Storage Blob Data Contributor role
+        run: |
+          set -euo pipefail
+
+          subscription_id=$(az account show --query id -o tsv)
+          client_id="${{ secrets.AZURE_CLIENT_ID }}"
+          storage_scope="/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Storage/storageAccounts/${storage_account_name}"
+
+          sp_object_id=$(az ad sp show --id "$client_id" --query id -o tsv)
+
+          existing_assignment=$(az role assignment list \
+            --assignee-object-id "$sp_object_id" \
+            --assignee-principal-type ServicePrincipal \
+            --role "Storage Blob Data Contributor" \
+            --scope "$storage_scope" \
+            --query "[0].id" \
+            -o tsv)
+
+          if [[ -n "$existing_assignment" ]]; then
+            echo "Storage Blob Data Contributor already assigned for deployment identity on backend storage scope."
+          else
+            az role assignment create \
+              --assignee-object-id "$sp_object_id" \
+              --assignee-principal-type ServicePrincipal \
+              --role "Storage Blob Data Contributor" \
+              --scope "$storage_scope" \
+              --only-show-errors > /dev/null
+            echo "Assigned Storage Blob Data Contributor on backend storage scope."
+          fi
+        shell: bash
+
+      - name: Temporarily allow runner IP on storage firewall
+        if: ${{ inputs.networkRulesEnabled }}
+        run: |
+          set -euo pipefail
+
+          runner_public_ip=$(curl -fsSL https://api.ipify.org)
+
+          az storage account network-rule add \
+            --resource-group "$resource_group_name" \
+            --account-name "$storage_account_name" \
+            --ip-address "$runner_public_ip" \
+            --only-show-errors > /dev/null
+
+          merged_allowed_ip_rules=$(jq -cn \
+            --argjson configured "$ALLOWED_IP_RULES" \
+            --arg runnerIp "$runner_public_ip" \
+            '$configured + [$runnerIp] | unique')
+
+          echo "runner_public_ip=$runner_public_ip" >> "$GITHUB_ENV"
+          echo "TF_VAR_allowed_ip_rules=$merged_allowed_ip_rules" >> "$GITHUB_ENV"
+          echo "Temporarily whitelisted runner IP $runner_public_ip on backend storage firewall."
+        shell: bash
 
       - name: Initialize Terraform backend
         run: |
@@ -372,3 +576,97 @@ jobs:
           cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
           terraform apply -auto-approve -input=false
         shell: bash
+
+      - name: Register self-hosted runner
+        if: ${{ inputs.selfHostedRunnerEnabled }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$GITHUB_RUNNER_PAT" ]]; then
+            echo "GITHUB_RUNNER_PAT secret is required when selfHostedRunnerEnabled is true." >&2
+            exit 1
+          fi
+
+          cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
+
+          runner_job_name=$(terraform output -raw self_hosted_runner_job_name)
+          runner_name="${runner_job_name}-ephemeral"
+
+          az extension add --name containerapp --upgrade --only-show-errors
+
+          registration_token=$(curl -fsSL -X POST \
+            -H "Authorization: Bearer $GITHUB_RUNNER_PAT" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners/registration-token" | jq -r .token)
+
+          az containerapp job secret set \
+            --name "$runner_job_name" \
+            --resource-group "$resource_group_name" \
+            --secrets runner-token="$registration_token" \
+            --only-show-errors
+
+          az containerapp job start \
+            --name "$runner_job_name" \
+            --resource-group "$resource_group_name" \
+            --only-show-errors
+
+          for attempt in {1..60}; do
+            runner_status=$(curl -fsSL \
+              -H "Authorization: Bearer $GITHUB_RUNNER_PAT" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners" | jq -r --arg runner_name "$runner_name" '.runners[] | select(.name == $runner_name) | .status' | head -n1)
+
+            if [[ "$runner_status" == "online" ]]; then
+              echo "Ephemeral runner '$runner_name' is online."
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "Ephemeral runner '$runner_name' did not become online in time." >&2
+          exit 1
+        shell: bash
+
+      - name: Remove temporary runner IP firewall allow
+        if: ${{ always() && inputs.networkRulesEnabled }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${runner_public_ip:-}" ]]; then
+            echo "No temporary runner IP was recorded; skipping firewall cleanup."
+            exit 0
+          fi
+
+          az storage account network-rule remove \
+            --resource-group "$resource_group_name" \
+            --account-name "$storage_account_name" \
+            --ip-address "$runner_public_ip" \
+            --only-show-errors > /dev/null
+
+          echo "Removed temporary runner IP $runner_public_ip from backend storage firewall."
+        shell: bash
+
+  verify-self-hosted-runner:
+    name: Verify self-hosted runner
+    if: ${{ inputs.selfHostedRunnerEnabled }}
+    needs: bootstrap
+    runs-on:
+      - self-hosted
+      - ${{ inputs.selfHostedRunnerLabel }}
+    env:
+      BOOTSTRAP_DIR: layers/bootstrap
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Smoke test runner
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
+          hostname
+          terraform validate

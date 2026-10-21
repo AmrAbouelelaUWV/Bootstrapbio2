@@ -13,6 +13,7 @@ This folder uses Bicep only to solve the chicken-and-egg problem for the Terrafo
 - The Bicep seed keeps the backend reachable long enough for Terraform to adopt it.
 - Terraform is responsible for the BIO2-oriented hardening step: blob recovery settings, network firewall rules, private endpoint, and private DNS.
 - Do not disable public network access for the backend while running Terraform from a GitHub-hosted runner. Once the backend is private-only, Terraform must run from a network that can resolve and reach the private endpoint.
+- When `self_hosted_runner_enabled=true`, Terraform also creates the bootstrap VNet, a runner subnet delegated to Container Apps, a private-endpoint subnet, and an Azure Container Apps Job for ephemeral runner execution.
 
 ## Current hardening options
 
@@ -20,6 +21,7 @@ This folder uses Bicep only to solve the chicken-and-egg problem for the Terrafo
 - `network_rules_enabled=true` enables deny-by-default firewall rules with `allowed_subnet_ids`, `allowed_ip_rules`, and `network_bypass`.
 - `private_endpoint_enabled=true` creates a blob private endpoint plus private DNS zone and VNet link. This requires `private_endpoint_subnet_id` and `private_dns_zone_virtual_network_id`.
 - Blob recovery defaults are enabled through versioning, change feed, last access time tracking, and 30-day blob/container delete retention.
+- `self_hosted_runner_enabled=true` provisions an Azure Container Apps Job that registers an ephemeral GitHub runner, processes work, and exits so the runtime container is cleaned up automatically.
 
 ## What the pipeline should do
 
