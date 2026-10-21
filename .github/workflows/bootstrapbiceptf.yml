@@ -43,21 +43,6 @@ on:
         required: false
         default: true
         type: boolean
-      networkBypass:
-        description: JSON array of storage firewall bypass values, for example ["AzureServices"].
-        required: false
-        default: '["AzureServices"]'
-        type: string
-      allowedSubnetIds:
-        description: JSON array of subnet IDs allowed by storage firewall rules.
-        required: false
-        default: '[]'
-        type: string
-      allowedIpRules:
-        description: JSON array of IP CIDR rules allowed by storage firewall rules.
-        required: false
-        default: '[]'
-        type: string
       privateEndpointEnabled:
         description: Create a private endpoint and private DNS for the blob service.
         required: false
@@ -68,31 +53,6 @@ on:
         required: false
         default: ''
         type: string
-      privateDnsZoneName:
-        description: Private DNS zone name for the blob endpoint.
-        required: false
-        default: privatelink.blob.core.windows.net
-        type: string
-      privateDnsZoneResourceGroupName:
-        description: Resource group for the private DNS zone. Leave empty to use the bootstrap RG.
-        required: false
-        default: ''
-        type: string
-      privateDnsZoneVirtualNetworkId:
-        description: Virtual network ID to link to the private DNS zone.
-        required: false
-        default: ''
-        type: string
-      blobVersioningEnabled:
-        description: Enable blob versioning for state recovery.
-        required: false
-        default: true
-        type: boolean
-      changeFeedEnabled:
-        description: Enable the storage account change feed.
-        required: false
-        default: true
-        type: boolean
       lastAccessTimeEnabled:
         description: Enable blob last access time tracking.
         required: false
@@ -183,16 +143,16 @@ jobs:
       STATE_KEY: ${{ inputs.stateKey }}
       PUBLIC_NETWORK_ACCESS_ENABLED: ${{ inputs.publicNetworkAccessEnabled }}
       NETWORK_RULES_ENABLED: ${{ inputs.networkRulesEnabled }}
-      NETWORK_BYPASS: ${{ inputs.networkBypass }}
-      ALLOWED_SUBNET_IDS: ${{ inputs.allowedSubnetIds }}
-      ALLOWED_IP_RULES: ${{ inputs.allowedIpRules }}
+      NETWORK_BYPASS: '["AzureServices"]'
+      ALLOWED_SUBNET_IDS: '[]'
+      ALLOWED_IP_RULES: '[]'
       PRIVATE_ENDPOINT_ENABLED: ${{ inputs.privateEndpointEnabled }}
       PRIVATE_ENDPOINT_SUBNET_ID: ${{ inputs.privateEndpointSubnetId }}
-      PRIVATE_DNS_ZONE_NAME: ${{ inputs.privateDnsZoneName }}
-      PRIVATE_DNS_ZONE_RESOURCE_GROUP_NAME: ${{ inputs.privateDnsZoneResourceGroupName }}
-      PRIVATE_DNS_ZONE_VIRTUAL_NETWORK_ID: ${{ inputs.privateDnsZoneVirtualNetworkId }}
-      BLOB_VERSIONING_ENABLED: ${{ inputs.blobVersioningEnabled }}
-      CHANGE_FEED_ENABLED: ${{ inputs.changeFeedEnabled }}
+      PRIVATE_DNS_ZONE_NAME: privatelink.blob.core.windows.net
+      PRIVATE_DNS_ZONE_RESOURCE_GROUP_NAME: ''
+      PRIVATE_DNS_ZONE_VIRTUAL_NETWORK_ID: ''
+      BLOB_VERSIONING_ENABLED: true
+      CHANGE_FEED_ENABLED: true
       LAST_ACCESS_TIME_ENABLED: ${{ inputs.lastAccessTimeEnabled }}
       BLOB_DELETE_RETENTION_DAYS: ${{ inputs.blobDeleteRetentionDays }}
       CONTAINER_DELETE_RETENTION_DAYS: ${{ inputs.containerDeleteRetentionDays }}
