@@ -416,6 +416,15 @@ jobs:
 
             cmk_key_vault_name="${cmk_key_vault_id##*/}"
 
+            purge_protection_enabled=$(az keyvault show --name "$cmk_key_vault_name" --query properties.enablePurgeProtection -o tsv)
+            if [[ "$purge_protection_enabled" != "true" ]]; then
+              echo "Enabling purge protection on Key Vault '$cmk_key_vault_name' for Storage CMK compatibility."
+              az keyvault update \
+                --name "$cmk_key_vault_name" \
+                --enable-purge-protection true \
+                --only-show-errors > /dev/null
+            fi
+
             if ! az keyvault key show --vault-name "$cmk_key_vault_name" --name "$cmk_key_name" > /dev/null 2>&1; then
               set +e
               create_output=$(az keyvault key create \
