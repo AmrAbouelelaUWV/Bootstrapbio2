@@ -322,12 +322,19 @@ jobs:
           echo "storage_account_name=$storage_account_name" >> "$GITHUB_ENV"
           echo "container_name=$container_name" >> "$GITHUB_ENV"
           echo "state_key=$state_key" >> "$GITHUB_ENV"
+
+          effective_public_network_access="$PUBLIC_NETWORK_ACCESS_ENABLED"
+          if [[ "$SELF_HOSTED_RUNNER_ENABLED" != "true" && "$PUBLIC_NETWORK_ACCESS_ENABLED" == "false" ]]; then
+            echo "PUBLIC_NETWORK_ACCESS_ENABLED=false requested on a GitHub-hosted runner. Keeping public access enabled for this run to avoid backend lockout; enforce full private-only mode on a self-hosted runner." >&2
+            effective_public_network_access="true"
+          fi
+
           echo "TF_VAR_location=$location" >> "$GITHUB_ENV"
           echo "TF_VAR_resource_group_name=$resource_group_name" >> "$GITHUB_ENV"
           echo "TF_VAR_storage_account_name=$storage_account_name" >> "$GITHUB_ENV"
           echo "TF_VAR_container_name=$container_name" >> "$GITHUB_ENV"
           echo "TF_VAR_tags={}" >> "$GITHUB_ENV"
-          echo "TF_VAR_public_network_access_enabled=$PUBLIC_NETWORK_ACCESS_ENABLED" >> "$GITHUB_ENV"
+          echo "TF_VAR_public_network_access_enabled=$effective_public_network_access" >> "$GITHUB_ENV"
           echo "TF_VAR_network_rules_enabled=$NETWORK_RULES_ENABLED" >> "$GITHUB_ENV"
           echo "TF_VAR_network_bypass=$NETWORK_BYPASS" >> "$GITHUB_ENV"
           echo "TF_VAR_allowed_subnet_ids=$ALLOWED_SUBNET_IDS" >> "$GITHUB_ENV"
@@ -579,6 +586,34 @@ jobs:
           import_if_missing azurerm_resource_group.tfstate "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}"
           import_if_missing azurerm_storage_account.tfstate "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Storage/storageAccounts/${storage_account_name}"
           import_if_missing azurerm_storage_container.tfstate "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Storage/storageAccounts/${storage_account_name}/blobServices/default/containers/${container_name}"
+
+          import_if_exists() {
+            local address="$1"
+            local resource_id="$2"
+
+            if az resource show --ids "$resource_id" > /dev/null 2>&1; then
+              import_if_missing "$address" "$resource_id"
+            fi
+          }
+
+          if [[ "$NETWORK_RULES_ENABLED" == "true" ]]; then
+            import_if_missing azurerm_storage_account_network_rules.tfstate[0] "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Storage/storageAccounts/${storage_account_name}"
+          fi
+
+          if [[ "$PRIVATE_ENDPOINT_ENABLED" == "true" ]]; then
+            private_dns_rg="${PRIVATE_DNS_ZONE_RESOURCE_GROUP_NAME:-$resource_group_name}"
+
+            import_if_exists azurerm_virtual_network.bootstrap[0] "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Network/virtualNetworks/bootstrap-vnet"
+            import_if_exists azurerm_subnet.self_hosted_runner[0] "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Network/virtualNetworks/bootstrap-vnet/subnets/runner"
+            import_if_exists azurerm_subnet.private_endpoint[0] "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Network/virtualNetworks/bootstrap-vnet/subnets/private-endpoints"
+            import_if_exists azurerm_private_dns_zone.blob[0] "/subscriptions/${subscription_id}/resourceGroups/${private_dns_rg}/providers/Microsoft.Network/privateDnsZones/${PRIVATE_DNS_ZONE_NAME}"
+            import_if_exists azurerm_private_dns_zone_virtual_network_link.blob[0] "/subscriptions/${subscription_id}/resourceGroups/${private_dns_rg}/providers/Microsoft.Network/privateDnsZones/${PRIVATE_DNS_ZONE_NAME}/virtualNetworkLinks/${storage_account_name}-blob-link"
+            import_if_exists azurerm_private_endpoint.blob[0] "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.Network/privateEndpoints/${storage_account_name}-blob-pe"
+          fi
+
+          if [[ "$CMK_ENABLED" == "true" && -z "$CMK_USER_ASSIGNED_IDENTITY_ID" ]]; then
+            import_if_exists azurerm_user_assigned_identity.cmk[0] "/subscriptions/${subscription_id}/resourceGroups/${resource_group_name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${CMK_USER_ASSIGNED_IDENTITY_NAME}"
+          fi
         shell: bash
 
       - name: Apply Terraform bootstrap
