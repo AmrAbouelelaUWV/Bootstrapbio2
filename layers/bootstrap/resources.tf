@@ -5,9 +5,11 @@ resource "azurerm_resource_group" "tfstate" {
 }
 
 locals {
-  cmk_identity_id = var.cmk_user_assigned_identity_id != null ? var.cmk_user_assigned_identity_id : try(azurerm_user_assigned_identity.cmk[0].id, null)
-  cmk_key_vault_key_id = var.cmk_key_vault_id == null || var.cmk_key_name == null ? null : (
-    var.cmk_key_version == null || var.cmk_key_version == "" ? "${trim(var.cmk_key_vault_id, "/")}/keys/${var.cmk_key_name}" : "${trim(var.cmk_key_vault_id, "/")}/keys/${var.cmk_key_name}/${var.cmk_key_version}"
+  cmk_identity_id    = var.cmk_user_assigned_identity_id != null ? var.cmk_user_assigned_identity_id : try(azurerm_user_assigned_identity.cmk[0].id, null)
+  cmk_key_vault_name = var.cmk_key_vault_id == null ? null : element(reverse(split("/", trim(var.cmk_key_vault_id, "/"))), 0)
+  cmk_key_vault_uri  = var.cmk_key_vault_id == null ? null : (startswith(var.cmk_key_vault_id, "https://") ? trim(var.cmk_key_vault_id, "/") : "https://${local.cmk_key_vault_name}.vault.azure.net")
+  cmk_key_vault_key_id = var.cmk_key_name == null || local.cmk_key_vault_uri == null ? null : (
+    var.cmk_key_version == null || var.cmk_key_version == "" ? "${local.cmk_key_vault_uri}/keys/${var.cmk_key_name}" : "${local.cmk_key_vault_uri}/keys/${var.cmk_key_name}/${var.cmk_key_version}"
   )
 }
 
