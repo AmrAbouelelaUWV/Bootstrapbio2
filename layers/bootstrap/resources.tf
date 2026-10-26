@@ -99,10 +99,9 @@ resource "azurerm_storage_container" "tfstate" {
 }
 
 locals {
-  storage_allowed_subnet_ids = var.network_rules_enabled ? distinct(concat(
-    var.allowed_subnet_ids,
-    var.self_hosted_runner_enabled ? [azurerm_subnet.self_hosted_runner[0].id] : []
-  )) : []
+  # Storage firewall subnet allow-list is explicit. The self-hosted runner uses
+  # private endpoint connectivity and does not need public endpoint ACL entries.
+  storage_allowed_subnet_ids = var.network_rules_enabled ? distinct(var.allowed_subnet_ids) : []
 }
 
 resource "azurerm_storage_account_network_rules" "tfstate" {
