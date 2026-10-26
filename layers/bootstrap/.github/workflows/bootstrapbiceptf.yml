@@ -761,3 +761,4 @@ jobs:
           cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
           hostname
           terraform validate
+
