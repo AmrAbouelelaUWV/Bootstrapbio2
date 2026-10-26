@@ -119,6 +119,10 @@ on:
         default: bio2-runner
         type: string
 
+concurrency:
+  group: bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   bootstrap:
     name: Seed backend, import resources, and apply
@@ -654,7 +658,38 @@ jobs:
           set -euo pipefail
 
           cd "$GITHUB_WORKSPACE/$BOOTSTRAP_DIR"
-          terraform apply -auto-approve -input=false
+
+          apply_once() {
+            terraform apply -auto-approve -input=false
+          }
+
+          set +e
+          apply_output=$(apply_once 2>&1)
+          apply_exit_code=$?
+          set -e
+
+          if [[ $apply_exit_code -eq 0 ]]; then
+            printf '%s\n' "$apply_output"
+            exit 0
+          fi
+
+          if printf '%s' "$apply_output" | grep -qi "Error acquiring the state lock\|state blob is already locked"; then
+            lock_id=$(printf '%s\n' "$apply_output" | sed -n 's/^[[:space:]]*ID:[[:space:]]*//p' | head -n1 | tr -d '\r')
+
+            if [[ -z "$lock_id" ]]; then
+              printf '%s\n' "$apply_output" >&2
+              echo "Detected a lock error but could not extract lock ID for force-unlock." >&2
+              exit $apply_exit_code
+            fi
+
+            echo "Detected stale Terraform lock '$lock_id'. Forcing unlock and retrying apply once..."
+            terraform force-unlock -force "$lock_id"
+            apply_once
+            exit 0
+          fi
+
+          printf '%s\n' "$apply_output" >&2
+          exit $apply_exit_code
         shell: bash
 
       - name: Create GitHub App token
