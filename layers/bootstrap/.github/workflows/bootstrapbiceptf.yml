@@ -167,7 +167,6 @@ jobs:
       SELF_HOSTED_RUNNER_ENABLED: ${{ inputs.selfHostedRunnerEnabled }}
       SELF_HOSTED_RUNNER_IMAGE: ${{ inputs.selfHostedRunnerImage }}
       SELF_HOSTED_RUNNER_LABEL: ${{ inputs.selfHostedRunnerLabel }}
-      GITHUB_RUNNER_PAT: ${{ secrets.RUNNER_PAT }}
 
     steps:
       - name: Checkout
@@ -633,13 +632,24 @@ jobs:
           terraform apply -auto-approve -input=false
         shell: bash
 
+      - name: Create GitHub App token
+        if: ${{ inputs.selfHostedRunnerEnabled }}
+        id: app_token
+        uses: peter-evans/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Register self-hosted runner
         if: ${{ inputs.selfHostedRunnerEnabled }}
+        env:
+          GH_APP_TOKEN: ${{ steps.app_token.outputs.token }}
         run: |
           set -euo pipefail
 
-          if [[ -z "$GITHUB_RUNNER_PAT" ]]; then
-            echo "GITHUB_RUNNER_PAT secret is required when selfHostedRunnerEnabled is true." >&2
+          if [[ -z "$GH_APP_TOKEN" ]]; then
+            echo "GitHub App token is missing. Configure GH_APP_ID and GH_APP_PRIVATE_KEY secrets for the environment." >&2
             exit 1
           fi
 
@@ -651,7 +661,7 @@ jobs:
           az extension add --name containerapp --upgrade --only-show-errors
 
           registration_token=$(curl -fsSL -X POST \
-            -H "Authorization: Bearer $GITHUB_RUNNER_PAT" \
+            -H "Authorization: Bearer $GH_APP_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners/registration-token" | jq -r .token)
 
@@ -668,7 +678,7 @@ jobs:
 
           for attempt in {1..60}; do
             runner_status=$(curl -fsSL \
-              -H "Authorization: Bearer $GITHUB_RUNNER_PAT" \
+              -H "Authorization: Bearer $GH_APP_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners" | jq -r --arg runner_name "$runner_name" '.runners[] | select(.name == $runner_name) | .status' | head -n1)
 
