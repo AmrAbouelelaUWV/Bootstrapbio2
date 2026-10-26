@@ -166,4 +166,10 @@ resource "azurerm_private_endpoint" "blob" {
       error_message = "private_endpoint_subnet_id is required when private_endpoint_enabled is true, unless the bootstrap subnet is created by this module."
     }
   }
+
+  # Storage CMK updates require exclusive access on the storage account.
+  # Serialize PE creation behind CMK association to avoid 409 conflicts.
+  depends_on = [
+    azurerm_storage_account_customer_managed_key.tfstate
+  ]
 }
