@@ -323,8 +323,8 @@ jobs:
           echo "state_key=$state_key" >> "$GITHUB_ENV"
 
           effective_public_network_access="$PUBLIC_NETWORK_ACCESS_ENABLED"
-          if [[ "$SELF_HOSTED_RUNNER_ENABLED" != "true" && "$PUBLIC_NETWORK_ACCESS_ENABLED" == "false" ]]; then
-            echo "PUBLIC_NETWORK_ACCESS_ENABLED=false requested on a GitHub-hosted runner. Keeping public access enabled for this run to avoid backend lockout; enforce full private-only mode on a self-hosted runner." >&2
+          if [[ "$PUBLIC_NETWORK_ACCESS_ENABLED" == "false" ]]; then
+            echo "PUBLIC_NETWORK_ACCESS_ENABLED=false requested during a GitHub-hosted bootstrap job. Keeping public access enabled for this run to avoid backend lockout; enforce private-only mode in a follow-up run from self-hosted connectivity." >&2
             effective_public_network_access="true"
           fi
 

@@ -20,6 +20,7 @@ resource "azurerm_subnet" "self_hosted_runner" {
   resource_group_name  = azurerm_resource_group.tfstate.name
   virtual_network_name = azurerm_virtual_network.bootstrap[0].name
   address_prefixes     = var.self_hosted_runner_subnet_prefixes
+  service_endpoints    = ["Microsoft.Storage"]
 
   delegation {
     name = "containerapps"
