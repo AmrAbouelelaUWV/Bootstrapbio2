@@ -674,7 +674,16 @@ jobs:
           fi
 
           if printf '%s' "$apply_output" | grep -qi "Error acquiring the state lock\|state blob is already locked"; then
-            lock_id=$(printf '%s\n' "$apply_output" | sed -n 's/^[[:space:]]*ID:[[:space:]]*//p' | head -n1 | tr -d '\r')
+            lock_id=$(printf '%s\n' "$apply_output" | tr -d '\r' | awk '
+              /ID:[[:space:]]*[0-9a-fA-F-]+/ {
+                for (i = 1; i <= NF; i++) {
+                  if ($i ~ /^[0-9a-fA-F-]{36}$/) {
+                    print $i
+                    exit
+                  }
+                }
+              }
+            ')
 
             if [[ -z "$lock_id" ]]; then
               printf '%s\n' "$apply_output" >&2
