@@ -167,7 +167,7 @@ jobs:
       SELF_HOSTED_RUNNER_ENABLED: ${{ inputs.selfHostedRunnerEnabled }}
       SELF_HOSTED_RUNNER_IMAGE: ${{ inputs.selfHostedRunnerImage }}
       SELF_HOSTED_RUNNER_LABEL: ${{ inputs.selfHostedRunnerLabel }}
-      GITHUB_RUNNER_PAT: ${{ secrets.GITHUB_RUNNER_PAT }}
+      GITHUB_RUNNER_PAT: ${{ secrets.RUNNER_PAT }}
 
     steps:
       - name: Checkout
